@@ -1,0 +1,21 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+command: [sleep, infinity]
+service:
+  enabled: false
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+pdb:
+  create: true
+  minAvailable: 1
+autoscaling:
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+networkPolicy:
+  enabled: true

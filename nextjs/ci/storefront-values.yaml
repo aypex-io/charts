@@ -1,0 +1,18 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+command: [nginx, -g, "daemon off;"]
+containerPorts:
+  http: 80
+service:
+  enabled: true
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+configmap:
+  create: true
+  data:
+    SPREE_API_URL: http://spree/api/v3
+    PAYLOAD_URL: http://cms

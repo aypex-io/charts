@@ -1,0 +1,17 @@
+apiVersion: v2
+name: nextjs
+description: Generic Next.js application chart — single Deployment per release. Compose multiple aliased instances in an umbrella chart for storefront + CMS + admin etc.
+type: application
+version: 0.1.0
+appVersion: "15.0"
+keywords:
+  - nextjs
+  - node
+  - web
+maintainers:
+  - name: aypex-io
+    url: https://github.com/aypex-io
+dependencies:
+  - name: common
+    version: 2.x.x
+    repository: oci://registry-1.docker.io/bitnamicharts

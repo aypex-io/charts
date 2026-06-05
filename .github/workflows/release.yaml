@@ -1,0 +1,65 @@
+name: Release chart
+
+on:
+  push:
+    tags:
+      - "rails-v*"
+      - "nextjs-v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Parse chart name + version from tag
+        id: tag
+        run: |
+          # Tag shape: <chart>-v<X.Y.Z> -> chart=<chart>, version=<X.Y.Z>
+          ref="${GITHUB_REF_NAME}"
+          chart="${ref%-v*}"
+          version="${ref##*-v}"
+          echo "chart=${chart}" >> "$GITHUB_OUTPUT"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "Releasing chart=${chart} version=${version}"
+
+      - name: Verify chart version matches tag
+        run: |
+          chart="${{ steps.tag.outputs.chart }}"
+          expected="${{ steps.tag.outputs.version }}"
+          actual=$(grep '^version:' "${chart}/Chart.yaml" | awk '{print $2}')
+          if [ "$expected" != "$actual" ]; then
+            echo "Chart.yaml version ($actual) does not match tag version ($expected)"
+            exit 1
+          fi
+
+      - name: Lint chart
+        run: |
+          cd ${{ steps.tag.outputs.chart }}
+          helm dependency update
+          helm lint .
+          for f in ci/*-values.yaml; do
+            echo "==> helm template -f $f"
+            helm template ci-release . -f "$f" > /dev/null
+          done
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io \
+            -u "${{ github.actor }}" --password-stdin
+
+      - name: Package and push
+        run: |
+          cd ${{ steps.tag.outputs.chart }}
+          helm package .
+          helm push "${{ steps.tag.outputs.chart }}-${{ steps.tag.outputs.version }}.tgz" \
+            oci://ghcr.io/${{ github.repository_owner }}/charts

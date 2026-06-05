@@ -1,0 +1,28 @@
+name: PR lint
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+      - name: Lint and template each chart
+        run: |
+          set -euo pipefail
+          for chart in rails nextjs; do
+            echo "==> $chart"
+            cd "$chart"
+            helm dependency update
+            helm lint .
+            for f in ci/*-values.yaml; do
+              echo "    helm template -f $f"
+              helm template ci-release . -f "$f" > /dev/null
+            done
+            cd ..
+          done

@@ -1,0 +1,20 @@
+CHART NAME: {{ .Chart.Name }}
+CHART VERSION: {{ .Chart.Version }}
+APP VERSION: {{ .Chart.AppVersion }}
+
+** Next.js app deployed as {{ include "common.names.fullname" . }}. **
+
+This chart deploys ONE Deployment per release. Compose multiple aliased
+instances in an umbrella chart for storefront + CMS + admin etc.
+
+Note: NEXT_PUBLIC_* env vars are baked at BUILD time and cannot be injected
+at runtime. Only runtime env belongs in `extraEnvVars` / `extraEnvVarsCM` /
+`configmap.data`.
+
+{{- if .Values.service.enabled }}
+
+Service: {{ include "common.names.fullname" . }} on port {{ .Values.service.ports.http }} (-> container :{{ .Values.containerPorts.http }}).
+{{- end }}
+
+{{- include "common.warnings.resources" (dict "sections" (list "") "context" $) }}
+{{- include "common.warnings.modifiedImages" (dict "images" (list .Values.image) "context" $) }}

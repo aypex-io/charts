@@ -1,0 +1,13 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+service:
+  enabled: true
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+extraEnvVars:
+  - name: RAILS_ENV
+    value: test

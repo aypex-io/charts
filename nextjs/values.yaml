@@ -1,0 +1,204 @@
+## @section Global parameters
+##
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+## @section Common parameters
+##
+kubeVersion: ""
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+commonLabels: {}
+commonAnnotations: {}
+clusterDomain: cluster.local
+extraDeploy: []
+
+## @section Image parameters
+##
+image:
+  registry: docker.io
+  repository: node
+  tag: "22-slim"
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  debug: false
+
+## @section Workload parameters
+##
+## Defaults run `node server.js` (standalone Next.js output). Override per release.
+##
+command: [node, server.js]
+args: []
+
+replicaCount: 1
+revisionHistoryLimit: 10
+
+updateStrategy:
+  type: RollingUpdate
+
+priorityClassName: ""
+schedulerName: ""
+terminationGracePeriodSeconds: 30
+hostAliases: []
+dnsPolicy: ""
+dnsConfig: {}
+
+podLabels: {}
+podAnnotations: {}
+podAffinityPreset: ""
+podAntiAffinityPreset: soft
+nodeAffinityPreset:
+  type: ""
+  key: ""
+  values: []
+affinity: {}
+nodeSelector: {}
+tolerations: []
+topologySpreadConstraints: []
+
+podSecurityContext:
+  enabled: true
+  fsGroupChangePolicy: Always
+  sysctls: []
+  supplementalGroups: []
+  fsGroup: 1001
+containerSecurityContext:
+  enabled: true
+  seLinuxOptions: {}
+  runAsUser: 1001
+  runAsGroup: 1001
+  runAsNonRoot: true
+  privileged: false
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+resourcesPreset: micro
+resources: {}
+
+containerPorts:
+  http: 3000
+
+## @section Probes
+##
+## Default to TCP probes — many Next.js apps don't ship a health route until
+## one is added explicitly. Flip to httpGet via customLivenessProbe when ready.
+##
+livenessProbe:
+  enabled: true
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+readinessProbe:
+  enabled: true
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+startupProbe:
+  enabled: false
+  tcpSocket:
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+customLivenessProbe: {}
+customReadinessProbe: {}
+customStartupProbe: {}
+
+lifecycleHooks: {}
+
+## @section Env vars & mounts
+##
+extraEnvVars: []
+extraEnvVarsCM: ""
+extraEnvVarsSecret: ""
+extraVolumes: []
+extraVolumeMounts: []
+initContainers: []
+sidecars: []
+
+## @section ConfigMap
+##
+## Renders into a ConfigMap mounted via envFrom. Map of key->value strings.
+## Useful for non-secret run-time env. NEXT_PUBLIC_* are baked at build time
+## and don't belong here.
+configmap:
+  create: false
+  data: {}
+
+## @section Service
+##
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    http: 80
+  targetPort: http
+  nodePorts:
+    http: ""
+  clusterIP: ""
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: Cluster
+  sessionAffinity: None
+  sessionAffinityConfig: {}
+  annotations: {}
+  extraPorts: []
+
+## @section ServiceAccount
+##
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+## @section Autoscaling
+##
+autoscaling:
+  vpa:
+    enabled: false
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPU: 80
+    targetMemory: 80
+
+## @section PodDisruptionBudget
+##
+pdb:
+  create: false
+  minAvailable: ""
+  maxUnavailable: ""
+
+## @section NetworkPolicy
+##
+networkPolicy:
+  enabled: false
+  allowExternal: true
+  allowExternalEgress: true
+  kubeAPIServerPorts: [443, 6443, 8443]
+  extraIngress: []
+  extraEgress: []
+  ingressPodMatchLabels: {}
+  ingressNSMatchLabels: {}
+  ingressNSPodMatchLabels: {}

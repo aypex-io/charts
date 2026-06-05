@@ -1,0 +1,25 @@
+CHART NAME: {{ .Chart.Name }}
+CHART VERSION: {{ .Chart.Version }}
+APP VERSION: {{ .Chart.AppVersion }}
+
+** Rails app deployed as {{ include "common.names.fullname" . }}. **
+
+This chart deploys ONE Deployment per release. To run multiple Rails processes
+(web + sidekiq + …), depend on the chart multiple times in an umbrella chart
+with different aliases and values.
+
+{{- if .Values.service.enabled }}
+
+Service: {{ include "common.names.fullname" . }} on port {{ .Values.service.ports.http }} (-> container :{{ .Values.containerPorts.http }}).
+{{- else }}
+
+This release runs without a Service (worker mode).
+{{- end }}
+
+{{- if .Values.database.enabled }}
+
+Database: {{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}
+{{- end }}
+
+{{- include "common.warnings.resources" (dict "sections" (list "") "context" $) }}
+{{- include "common.warnings.modifiedImages" (dict "images" (list .Values.image) "context" $) }}

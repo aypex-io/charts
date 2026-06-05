@@ -1,0 +1,247 @@
+## @section Global parameters
+##
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+## @section Common parameters
+##
+kubeVersion: ""
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+commonLabels: {}
+commonAnnotations: {}
+clusterDomain: cluster.local
+extraDeploy: []
+
+## @section Image parameters
+##
+image:
+  registry: docker.io
+  repository: ruby
+  tag: "3.4-slim"
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  debug: false
+
+## @section Workload parameters
+##
+## Defaults run `rails server`. Override `command`/`args` per release.
+## A worker release (sidekiq, solid-queue, etc.) sets:
+##   command: [bundle, exec, sidekiq]
+##   service.enabled: false
+##
+command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
+args: []
+
+replicaCount: 1
+revisionHistoryLimit: 10
+
+updateStrategy:
+  type: RollingUpdate
+
+priorityClassName: ""
+schedulerName: ""
+terminationGracePeriodSeconds: 30
+hostAliases: []
+dnsPolicy: ""
+dnsConfig: {}
+
+podLabels: {}
+podAnnotations: {}
+podAffinityPreset: ""
+podAntiAffinityPreset: soft
+nodeAffinityPreset:
+  type: ""
+  key: ""
+  values: []
+affinity: {}
+nodeSelector: {}
+tolerations: []
+topologySpreadConstraints: []
+
+podSecurityContext:
+  enabled: true
+  fsGroupChangePolicy: Always
+  sysctls: []
+  supplementalGroups: []
+  fsGroup: 1001
+containerSecurityContext:
+  enabled: true
+  seLinuxOptions: {}
+  runAsUser: 1001
+  runAsGroup: 1001
+  runAsNonRoot: true
+  privileged: false
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+## resourcesPreset is one of: nano, micro, small, medium, large, xlarge, 2xlarge
+## Set `resources` directly to override the preset.
+resourcesPreset: micro
+resources: {}
+
+containerPorts:
+  http: 3000
+
+## @section Probes
+##
+## Default to a Rails-native /up healthcheck (Rails 7.1+). Override per release.
+##
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /up
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /up
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /up
+    port: http
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 30
+  successThreshold: 1
+
+customLivenessProbe: {}
+customReadinessProbe: {}
+customStartupProbe: {}
+
+lifecycleHooks: {}
+
+## @section Env vars & mounts
+##
+## `extraEnvVars`, `extraEnvVarsCM`, `extraEnvVarsSecret`, `extraVolumes`,
+## `extraVolumeMounts`, `initContainers`, `sidecars` follow the Bitnami convention.
+extraEnvVars: []
+extraEnvVarsCM: ""
+extraEnvVarsSecret: ""
+extraVolumes: []
+extraVolumeMounts: []
+initContainers: []
+sidecars: []
+
+## @section Database
+##
+## Either supply components (host/port/name/userSecretRef) and let the chart
+## render a DATABASE_URL, or pass `urlOverride` to skip assembly.
+##
+database:
+  enabled: false
+  host: ""
+  port: 5432
+  name: ""
+  ## Secret containing keys `username` and `password`.
+  userSecretRef: ""
+  urlOverride: ""
+  ## Env var name to inject the assembled URL as.
+  envVar: DATABASE_URL
+
+## @section ConfigMap
+##
+## Renders into a ConfigMap mounted via envFrom. Useful for non-secret env.
+configmap:
+  create: false
+  data: {}
+
+## @section Service
+##
+## Worker releases disable the service. Web releases keep it on.
+service:
+  enabled: true
+  type: ClusterIP
+  ports:
+    http: 80
+  targetPort: http
+  nodePorts:
+    http: ""
+  clusterIP: ""
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: Cluster
+  sessionAffinity: None
+  sessionAffinityConfig: {}
+  annotations: {}
+  extraPorts: []
+
+## @section ServiceAccount
+##
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false
+
+## @section Autoscaling
+##
+autoscaling:
+  vpa:
+    enabled: false
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPU: 80
+    targetMemory: 80
+
+## @section PodDisruptionBudget
+##
+pdb:
+  create: false
+  minAvailable: ""
+  maxUnavailable: ""
+
+## @section NetworkPolicy
+##
+networkPolicy:
+  enabled: false
+  allowExternal: true
+  allowExternalEgress: true
+  kubeAPIServerPorts: [443, 6443, 8443]
+  extraIngress: []
+  extraEgress: []
+  ingressPodMatchLabels: {}
+  ingressNSMatchLabels: {}
+  ingressNSPodMatchLabels: {}
+
+## @section Metrics
+##
+metrics:
+  enabled: false
+  service:
+    ports:
+      metrics: 9394
+  serviceMonitor:
+    enabled: false
+    namespace: ""
+    interval: ""
+    scrapeTimeout: ""
+    labels: {}
+    selector: {}
+    relabelings: []
+    metricRelabelings: []
+    honorLabels: false
+    jobLabel: ""

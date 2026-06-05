@@ -1,0 +1,17 @@
+apiVersion: v2
+name: rails
+description: Generic Rails application chart — single Deployment per release. Compose multiple aliased instances in an umbrella chart (e.g. web + sidekiq) to run multiple Rails processes.
+type: application
+version: 0.1.0
+appVersion: "8.0"
+keywords:
+  - rails
+  - ruby
+  - web
+maintainers:
+  - name: aypex-io
+    url: https://github.com/aypex-io
+dependencies:
+  - name: common
+    version: 2.x.x
+    repository: oci://registry-1.docker.io/bitnamicharts

@@ -1,0 +1,21 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+command: [nginx, -g, "daemon off;"]
+containerPorts:
+  http: 80
+service:
+  enabled: true
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+extraEnvVars:
+  - name: DATABASE_URI
+    value: postgresql://payload:secret@db/payload
+  - name: PAYLOAD_SECRET
+    value: ci-fake-secret
+pdb:
+  create: true
+  minAvailable: 1
