@@ -1,0 +1,17 @@
+apiVersion: v2
+name: rails-server
+description: Long-running Rails process chart — single Deployment per release. Covers web (puma) and worker (sidekiq / solid-queue) via values. For one-shot tasks (migrate, seed, rake) use rails-task instead.
+type: application
+version: 0.1.0
+appVersion: "8.0"
+keywords:
+  - rails
+  - ruby
+  - web
+maintainers:
+  - name: aypex-io
+    url: https://github.com/aypex-io
+dependencies:
+  - name: common
+    version: 2.x.x
+    repository: oci://registry-1.docker.io/bitnamicharts

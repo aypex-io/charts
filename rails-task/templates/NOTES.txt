@@ -1,0 +1,22 @@
+CHART NAME: {{ .Chart.Name }}
+CHART VERSION: {{ .Chart.Version }}
+APP VERSION: {{ .Chart.AppVersion }}
+
+** Rails task scheduled as Job {{ include "rails-task.jobName" . }}. **
+
+This chart deploys ONE Kubernetes Job per release. Use it for one-shot
+Rails commands: db:migrate, db:seed, rake tasks, rails runner.
+
+For long-running processes (web, worker) use rails-server instead.
+
+Command: {{ .Values.command }}
+{{- if .Values.hook }}
+
+Helm hook: {{ .Values.hook }} (Job name suffixed with command+tag hash so each
+release cycle creates a distinct tracked resource).
+{{- end }}
+
+{{- if .Values.database.enabled }}
+
+Database: {{ .Values.database.host }}:{{ .Values.database.port }}/{{ .Values.database.name }}
+{{- end }}

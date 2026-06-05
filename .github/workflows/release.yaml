@@ -3,7 +3,8 @@ name: Release chart
 on:
   push:
     tags:
-      - "rails-v*"
+      - "rails-server-v*"
+      - "rails-task-v*"
       - "nextjs-v*"
 
 permissions:

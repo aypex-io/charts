@@ -25,7 +25,7 @@ spec:
       annotations: {{- include "common.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 8 }}
       {{- end }}
     spec:
-      serviceAccountName: {{ include "rails.serviceAccountName" . }}
+      serviceAccountName: {{ include "rails-server.serviceAccountName" . }}
       automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
       {{- include "common.images.pullSecrets" (dict "images" (list .Values.image) "global" .Values.global) | nindent 6 }}
       {{- if .Values.hostAliases }}
@@ -62,7 +62,7 @@ spec:
       initContainers: {{- include "common.tplvalues.render" (dict "value" .Values.initContainers "context" $) | nindent 8 }}
       {{- end }}
       containers:
-        - name: rails
+        - name: rails-server
           image: {{ include "common.images.image" (dict "imageRoot" .Values.image "global" .Values.global) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           {{- if .Values.containerSecurityContext.enabled }}
@@ -77,8 +77,8 @@ spec:
           {{- if .Values.lifecycleHooks }}
           lifecycle: {{- include "common.tplvalues.render" (dict "value" .Values.lifecycleHooks "context" $) | nindent 12 }}
           {{- end }}
-          env: {{- include "rails.env" . | nindent 12 }}
-          {{- $envFrom := include "rails.envFrom" . | trim }}
+          env: {{- include "rails-server.env" . | nindent 12 }}
+          {{- $envFrom := include "rails-server.envFrom" . | trim }}
           {{- if $envFrom }}
           envFrom:
             {{- $envFrom | nindent 12 }}

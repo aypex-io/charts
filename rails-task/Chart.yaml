@@ -1,13 +1,15 @@
 apiVersion: v2
-name: rails
-description: Generic Rails application chart — single Deployment per release. Compose multiple aliased instances in an umbrella chart (e.g. web + sidekiq) to run multiple Rails processes.
+name: rails-task
+description: One-shot Rails task chart — single Job per release. Covers db:migrate, db:seed, rake tasks, rails runner, and any other one-shot Rails command. For long-running processes (web, worker) use rails-server.
 type: application
 version: 0.1.0
 appVersion: "8.0"
 keywords:
   - rails
   - ruby
-  - web
+  - job
+  - migrate
+  - rake
 maintainers:
   - name: aypex-io
     url: https://github.com/aypex-io

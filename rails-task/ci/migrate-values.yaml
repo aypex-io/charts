@@ -1,0 +1,9 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+command: [sh, -c, "echo migrating; sleep 1"]
+hook: post-install,post-upgrade
+hookWeight: "0"
+hookDeletePolicy: before-hook-creation
+backoffLimit: 3

@@ -1,0 +1,129 @@
+## @section Global parameters
+##
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  storageClass: ""
+
+## @section Common parameters
+##
+kubeVersion: ""
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+commonLabels: {}
+commonAnnotations: {}
+clusterDomain: cluster.local
+extraDeploy: []
+
+## @section Image parameters
+##
+image:
+  registry: docker.io
+  repository: ruby
+  tag: "3.4-slim"
+  digest: ""
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+  debug: false
+
+## @section Task parameters
+##
+## Defaults to `rails db:migrate`. Common overrides per release:
+##   migrate: command: [bundle, exec, rails, db:migrate]
+##   seed:    command: [bundle, exec, rails, db:seed]
+##   rake:    command: [bundle, exec, rake, "<task>"]
+##   runner:  command: [bundle, exec, rails, runner, "<code>"]
+##
+command: [bundle, exec, rails, db:migrate]
+args: []
+
+## @section Job spec
+##
+backoffLimit: 3
+completions: 1
+parallelism: 1
+activeDeadlineSeconds: ""
+ttlSecondsAfterFinished: 600
+restartPolicy: Never
+
+## @section Helm hook semantics
+##
+## Empty `hook` = no hook (Job runs on every helm install/upgrade as a
+## tracked resource, named after the chart). When `hook` is set, the Job
+## name is suffixed with a content hash so each release cycle gets a fresh
+## tracked resource — ArgoCD parses helm.sh/hook as a PostSync hook and
+## would NOT track drift on a stable name (see auto-memory
+## feedback_argocd_helm_hooks_no_drift).
+##
+hook: ""                           # e.g. "post-install,post-upgrade"
+hookWeight: ""                     # e.g. "0"
+hookDeletePolicy: ""               # e.g. "before-hook-creation"
+
+## @section Pod template
+##
+priorityClassName: ""
+schedulerName: ""
+terminationGracePeriodSeconds: 30
+hostAliases: []
+dnsPolicy: ""
+dnsConfig: {}
+
+podLabels: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+
+podSecurityContext:
+  enabled: true
+  fsGroupChangePolicy: Always
+  sysctls: []
+  supplementalGroups: []
+  fsGroup: 1001
+containerSecurityContext:
+  enabled: true
+  seLinuxOptions: {}
+  runAsUser: 1001
+  runAsGroup: 1001
+  runAsNonRoot: true
+  privileged: false
+  readOnlyRootFilesystem: false
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+resourcesPreset: micro
+resources: {}
+
+## @section Env vars & mounts
+##
+extraEnvVars: []
+extraEnvVarsCM: ""
+extraEnvVarsSecret: ""
+extraVolumes: []
+extraVolumeMounts: []
+initContainers: []
+
+## @section Database
+##
+## Either supply components (host/port/name/userSecretRef) and let the chart
+## render a DATABASE_URL, or pass `urlOverride` to skip assembly.
+##
+database:
+  enabled: false
+  host: ""
+  port: 5432
+  name: ""
+  userSecretRef: ""
+  urlOverride: ""
+  envVar: DATABASE_URL
+
+## @section ServiceAccount
+##
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  automountServiceAccountToken: false

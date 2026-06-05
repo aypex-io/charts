@@ -15,7 +15,7 @@ jobs:
       - name: Lint and template each chart
         run: |
           set -euo pipefail
-          for chart in rails nextjs; do
+          for chart in rails-server rails-task nextjs; do
             echo "==> $chart"
             cd "$chart"
             helm dependency update

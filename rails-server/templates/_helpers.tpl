@@ -1,7 +1,7 @@
 {{/*
 Return the ServiceAccount name. Bitnami common does not ship this helper.
 */}}
-{{- define "rails.serviceAccountName" -}}
+{{- define "rails-server.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create -}}
     {{ default (include "common.names.fullname" .) .Values.serviceAccount.name }}
 {{- else -}}
@@ -13,7 +13,7 @@ Return the ServiceAccount name. Bitnami common does not ship this helper.
 Return the assembled DATABASE_URL value from database.* values.
 Used as an env var when database.enabled is true and database.urlOverride is empty.
 */}}
-{{- define "rails.databaseUrl" -}}
+{{- define "rails-server.databaseUrl" -}}
 {{- if .Values.database.urlOverride -}}
 {{ .Values.database.urlOverride }}
 {{- else -}}
@@ -25,7 +25,7 @@ postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@{{ .Values.database.host }}:{
 Render the standard env block: database wiring (if enabled), extraEnvVars,
 and any sidekick configuration. Used by deployment.yaml.
 */}}
-{{- define "rails.env" -}}
+{{- define "rails-server.env" -}}
 {{- if and .Values.database.enabled (not .Values.database.urlOverride) }}
 - name: DATABASE_USER
   valueFrom:
@@ -40,7 +40,7 @@ and any sidekick configuration. Used by deployment.yaml.
 {{- end }}
 {{- if .Values.database.enabled }}
 - name: {{ .Values.database.envVar }}
-  value: {{ include "rails.databaseUrl" . | quote }}
+  value: {{ include "rails-server.databaseUrl" . | quote }}
 {{- end }}
 {{- if .Values.extraEnvVars }}
 {{ include "common.tplvalues.render" (dict "value" .Values.extraEnvVars "context" $) }}
@@ -50,7 +50,7 @@ and any sidekick configuration. Used by deployment.yaml.
 {{/*
 Render the standard envFrom block.
 */}}
-{{- define "rails.envFrom" -}}
+{{- define "rails-server.envFrom" -}}
 {{- if .Values.configmap.create }}
 - configMapRef:
     name: {{ include "common.names.fullname" . }}

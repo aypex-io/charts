@@ -2,11 +2,12 @@ CHART NAME: {{ .Chart.Name }}
 CHART VERSION: {{ .Chart.Version }}
 APP VERSION: {{ .Chart.AppVersion }}
 
-** Rails app deployed as {{ include "common.names.fullname" . }}. **
+** Rails server deployed as {{ include "common.names.fullname" . }}. **
 
-This chart deploys ONE Deployment per release. To run multiple Rails processes
-(web + sidekiq + …), depend on the chart multiple times in an umbrella chart
-with different aliases and values.
+This chart deploys ONE long-running Rails process (web or worker) per release.
+For multiple processes, depend on rails-server multiple times in an umbrella
+chart with different aliases and values. For one-shot tasks (db:migrate,
+db:seed, rake), use rails-task instead.
 
 {{- if .Values.service.enabled }}
 

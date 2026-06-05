@@ -1,0 +1,8 @@
+image:
+  registry: docker.io
+  repository: nginx
+  tag: "1.27"
+command: [sh, -c, "echo running rake; sleep 1"]
+# no hook — runs once on install, tracked as a normal resource
+backoffLimit: 1
+ttlSecondsAfterFinished: 300
