@@ -34,6 +34,9 @@ spec:
   ingress:
     - ports:
         - port: {{ .Values.containerPorts.http }}
+        {{- if .Values.containerPorts.metrics }}
+        - port: {{ .Values.containerPorts.metrics }}
+        {{- end }}
       {{- if not .Values.networkPolicy.allowExternal }}
       from:
         - podSelector:
