@@ -1,0 +1,67 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ .Values.cnpg.name }}
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cnpg.instances }}
+  imageName: {{ .Values.cnpg.imageName }}
+  primaryUpdateStrategy: unsupervised
+  enableSuperuserAccess: false
+  minSyncReplicas: 0
+  maxSyncReplicas: {{ .Values.cnpg.maxSyncReplicas }}
+
+  {{- with .Values.cnpg.parameters }}
+  postgresql:
+    parameters: {{- toYaml . | nindent 6 }}
+  {{- end }}
+
+  {{- if .Values.cnpg.databases }}
+  bootstrap:
+    initdb:
+      database: {{ (index .Values.cnpg.databases 0).name }}
+      owner: {{ (index .Values.cnpg.databases 0).owner }}
+      secret:
+        name: {{ (index .Values.cnpg.databases 0).passwordSecret }}
+  {{- end }}
+
+  # bootstrap.initdb sets the FIRST entry's owner password once at cluster
+  # init. Subsequent entries' owners are implicit (created when their
+  # Database CR reconciles) — without a managed role they get a CNPG-random
+  # password the ExternalSecret-fed passwordSecret can't match, so the
+  # workload's auth fails. List every non-bootstrap owner here so CNPG
+  # keeps each user's password in sync with its declared secret.
+  managed:
+    roles:
+    {{- range $i, $db := .Values.cnpg.databases }}
+    {{- if gt $i 0 }}
+    - name: {{ $db.owner }}
+      ensure: present
+      login: true
+      passwordSecret:
+        name: {{ $db.passwordSecret }}
+    {{- end }}
+    {{- end }}
+
+  storage:
+    size: {{ .Values.cnpg.storageSize }}
+    storageClass: {{ .Values.cnpg.storageClass }}
+
+  walStorage:
+    size: {{ .Values.cnpg.walStorageSize }}
+    storageClass: {{ .Values.cnpg.walStorageClass | default .Values.cnpg.storageClass }}
+
+  {{- if .Values.cnpg.objectStore.enabled }}
+  plugins:
+    - name: barman-cloud.cloudnative-pg.io
+      isWALArchiver: true
+      parameters:
+        barmanObjectName: aws-s3
+  {{- end }}
+
+  resources: {{- toYaml .Values.cnpg.resources | nindent 4 }}
+
+  {{- with .Values.cnpg.affinity }}
+  affinity: {{- toYaml . | nindent 4 }}
+  {{- end }}

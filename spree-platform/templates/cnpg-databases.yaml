@@ -1,0 +1,24 @@
+{{/*
+A Database CR per `cnpg.databases` entry beyond the first (the first is
+created by `bootstrap.initdb` on the Cluster). For an existing cluster
+restored from backup, ALL databases get a Database CR — declarative,
+idempotent, doesn't depend on initdb's one-shot postInitSQL.
+*/}}
+{{- range $i, $db := .Values.cnpg.databases }}
+{{- if gt $i 0 }}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ $db.name }}
+  namespace: {{ include "spree-store.namespace" $ }}
+  labels: {{- include "spree-store.labels" $ | nindent 4 }}
+spec:
+  cluster:
+    name: {{ $.Values.cnpg.name }}
+  name: {{ $db.name }}
+  owner: {{ $db.owner }}
+  ensure: present
+  databaseReclaimPolicy: retain
+{{- end }}
+{{- end }}

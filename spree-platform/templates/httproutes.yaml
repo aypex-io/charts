@@ -1,0 +1,96 @@
+{{- $ns := include "spree-store.namespace" . -}}
+{{- $release := .Release.Name -}}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-admin
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range .Values.gateway.sectionNames.fitness }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.admin | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $release }}-web
+          namespace: {{ $ns }}
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-api
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range .Values.gateway.sectionNames.fitness }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.api | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $release }}-web
+          namespace: {{ $ns }}
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-storefront
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range .Values.gateway.sectionNames.com }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.storefront | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $release }}-storefront
+          namespace: {{ $ns }}
+          port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-cms
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.cms | default .Values.gateway.sectionNames.com) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.cms | quote }}
+  # cms-staging is now an admin-only surface. Public content (Pages,
+  # Posts) is rendered by the storefront app under /pages/* and /blog/*
+  # via Payload's REST API (in-cluster DNS). Anything not in the prefix
+  # list below gets a 404 from the gateway.
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: PathPrefix
+            value: /_next
+      backendRefs:
+        - name: {{ $release }}-cms
+          namespace: {{ $ns }}
+          port: 80

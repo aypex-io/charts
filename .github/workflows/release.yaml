@@ -6,6 +6,7 @@ on:
       - "rails-server-v*"
       - "rails-task-v*"
       - "nextjs-v*"
+      - "spree-platform-v*"
 
 permissions:
   contents: read
