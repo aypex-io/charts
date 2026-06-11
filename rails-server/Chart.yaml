@@ -2,7 +2,7 @@ apiVersion: v2
 name: rails-server
 description: Long-running Rails process chart — single Deployment per release. Covers web (puma) and worker (sidekiq / solid-queue) via values. For one-shot tasks (migrate, seed, rake) use rails-task instead.
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "8.0"
 keywords:
   - rails

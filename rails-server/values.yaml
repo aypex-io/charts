@@ -90,6 +90,11 @@ resources: {}
 
 containerPorts:
   http: 3000
+  ## Optional standalone metrics port (e.g. a Sidekiq yabeda exporter on 9394).
+  ## Set per worker release; when unset, no extra containerPort or NetworkPolicy
+  ## ingress rule renders. Pod-annotation scrapes work without it, but declaring
+  ## it documents the port and keeps it reachable if networkPolicy is enabled.
+  # metrics: 9394
 
 ## @section Probes
 ##
