@@ -1,0 +1,74 @@
+# CI render fixture — a representative tenant so `helm template` exercises every
+# template (CNPG cluster/databases/pooler/objectstore/scheduledbackup, dragonfly,
+# externalsecrets, httproutes, referencegrant, job-cms-migrate). Not a real
+# deployment; values mirror the shape of a gitops customers/<slug> overlay.
+customer:
+  slug: ci
+env: stg
+
+hostnames:
+  admin: admin.example.test
+  api: api.example.test
+  storefront: shop.example.test
+  cms: cms.example.test
+publicURL:
+  admin: https://admin.example.test
+  api: https://api.example.test
+  storefront: https://shop.example.test
+  cms: https://cms.example.test
+gateway:
+  sectionNames:
+    fitness: [wildcard-example-test-https]
+    com: [wildcard-example-test-https]
+
+cnpg:
+  name: ci-db
+  instances: 1
+  databases:
+    - name: spree
+      owner: spree
+      passwordSecret: ci-spree-db
+    - name: payload
+      owner: payload
+      passwordSecret: ci-cms-db
+  scheduledBackup:
+    enabled: true
+    immediate: true
+  objectStore:
+    enabled: true
+    bucket: ci-data-backups
+    path: pg/ci/stg
+
+externalSecrets:
+  asmKeys:
+    spreeRails: N27a/spree/ci
+    spreeSmtp: N27a/smtp/ci
+    cmsPayload: N27a/cms/ci
+    spreeS3: service_user/prod/ci-spree-stg
+    cmsS3: service_user/prod/ci-payload-stg
+    cnpgBackup: service_user/prod/cnpg
+
+global:
+  s3:
+    spreeBucket: ci-spree-stg-storage
+    cmsBucket: ci-payload-stg-media
+
+images:
+  spree: "0.0.0"
+  storefront: "0.0.0"
+  cms: "0.0.0"
+
+web:
+  image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
+worker:
+  image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
+migrate:
+  image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
+seed:
+  image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
+rake:
+  image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
+storefront:
+  image: { registry: ghcr.io, repository: ci/storefront, tag: "0.0.0" }
+cms:
+  image: { registry: ghcr.io, repository: ci/payload, tag: "0.0.0" }

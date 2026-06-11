@@ -1,0 +1,63 @@
+{{- if and .Values.jobs.cmsMigrate.enabled .Values.images.cms }}
+{{- $cmsDb := include "spree-store.resourceName" (dict "ctx" . "suffix" "cms-db") -}}
+{{- $cmsPayload := include "spree-store.resourceName" (dict "ctx" . "suffix" "cms-payload") -}}
+{{- $name := printf "%s-cms-migrate-%s" .Release.Name (.Values.images.cms | sha256sum | trunc 8) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.jobs.cmsMigrate.backoffLimit }}
+  template:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: migrate
+          image: {{ .Values.cms.image.registry }}/{{ .Values.cms.image.repository }}:{{ .Values.images.cms }}
+          command:
+            - ./node_modules/.bin/payload
+            - migrate
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $cmsDb }}
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $cmsDb }}
+                  key: password
+            - name: DATABASE_URI
+              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@{{ .Values.cnpg.name }}-rw:5432/payload"
+          envFrom:
+            - secretRef:
+                name: {{ $cmsPayload }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}

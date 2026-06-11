@@ -1,0 +1,261 @@
+## spree-store umbrella — tenant-neutral defaults.
+## Per-tenant overlays live in customers/<slug>/base/values.yaml.
+## Per-env overlays live in customers/<slug>/{stg,prd}/values.yaml.
+
+## @section Top-level
+## env + customer.slug come from the per-tenant overlays; namespace is derived.
+env: ""                  # "stg" | "prd" — env overlay
+namespace: ""            # auto: "{customer.slug}-{env}" — see _helpers.tpl
+
+customer:
+  slug: ""               # tenant base overlay
+
+clusterDomain: cluster.local
+
+## @section Hostnames + gateway wiring
+## All four hostnames come from the per-env overlay.
+hostnames:
+  admin: ""
+  api: ""
+  storefront: ""
+  cms: ""
+
+publicURL:
+  admin: ""
+  api: ""
+  storefront: ""
+  cms: ""
+
+gateway:
+  name: main
+  namespace: envoy-gateway-system
+  sectionNames:
+    fitness: []          # tenant + env supplies
+    com: []
+
+## @section CNPG cluster (shared by spree + payload)
+cnpg:
+  name: ""               # tenant base overlay — typically "<slug>-db"
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18
+  storageSize: 20Gi
+  walStorageSize: 5Gi
+  storageClass: ceph-block-r1
+  walStorageClass: ""
+  maxSyncReplicas: 0
+
+  # CNPG pod resources. Default sized for throwaway envs (stg); prd overlays
+  # bump to production sizing to match the legacy tkf pg-primary cluster.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+
+  # postgresql.parameters passed through to the Cluster CR. Empty by default
+  # (CNPG defaults apply); prd overlays set production tuning.
+  parameters: {}
+
+  # CNPG spec.affinity (AffinityConfiguration). Empty by default → CNPG's
+  # built-in soft (preferred) pod anti-affinity applies, fine for throwaway
+  # stg. prd overlays set required hostname anti-affinity for one-pod-per-node.
+  affinity: {}
+
+  pooler:
+    enabled: true
+    instances: 1
+    maxClientConn: "200"
+    defaultPoolSize: "10"
+
+  scheduledBackup:
+    enabled: false
+    schedule: "0 0 * * * *"
+    # Take a base backup as soon as the ScheduledBackup is created (one-shot
+    # on create, then on schedule). prd sets true so the cluster is
+    # restorable immediately rather than waiting for the first cron tick.
+    immediate: false
+
+  objectStore:
+    enabled: false
+    bucket: ""
+    path: ""
+    retentionPolicy: "30d"
+    retentionPolicyIntervalSeconds: 1800
+    walCompression: gzip
+
+  ## Initial databases + owners. Each gets a Database CR (CNPG ≥1.24) so we
+  ## don't depend on postInitSQL (which doesn't run during recovery-from-backup).
+  databases: []          # tenant base overlay — see customers/tkf/base/values.yaml
+
+## @section Dragonfly (Redis-compatible cache for Rails)
+dragonfly:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
+  image:
+    # docker.dragonflydb.io IS the registry; previous values doubled it up
+    # under docker.io which resolved to a non-existent docker.io image.
+    registry: docker.dragonflydb.io
+    repository: dragonflydb/dragonfly
+    tag: latest
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+## @section ExternalSecrets
+externalSecrets:
+  storeName: cluster-secret-store
+  storeKind: ClusterSecretStore
+  refreshInterval: 1h
+
+  ## ASM keys — base overlay supplies env-neutral keys (e.g. shared rails
+  ## master key); env overlays supply env-scoped keys (S3 creds per env).
+  asmKeys:
+    spreeRails: ""
+    spreeS3: ""
+    spreeSmtp: ""
+    cmsPayload: ""
+    cmsS3: ""
+    cnpgBackup: ""
+
+## @section S3 buckets — env overlay supplies.
+## Under `global` so they propagate to the rails-server / nextjs subcharts,
+## where the tenant-base extraEnvVars reference them via `tpl`
+## (AWS_BUCKET for Spree Active Storage, S3_BUCKET for Payload).
+global:
+  s3:
+    spreeBucket: ""        # env overlay: tkf-spree-<env>-storage-...
+    cmsBucket: ""          # env overlay: tkf-payload-<env>-media-...
+
+## @section Image tags for the cms-migrate hook Job + hash-naming. Empty
+## defaults so the bare chart renders/lints; the gitops env overlay supplies
+## the real tags (kept in lockstep with web/cms.image.tag).
+images:
+  spree: ""
+  storefront: ""
+  cms: ""
+
+## @section CMS migrate Job (Payload). Lives in the umbrella because the
+## cms image is the nextjs subchart's payload-shaped consumer; rails-task
+## is Rails-specific.
+jobs:
+  cmsMigrate:
+    enabled: true
+    backoffLimit: 3
+
+## @section Subchart defaults — generic Rails / Next defaults that work
+## across tenants. Tenant base overlay supplies image registry + repository;
+## env overlay supplies the tag and replica count.
+##
+## Aliases:
+##   web, worker         -> rails-server (Deployments)
+##   migrate, seed, rake -> rails-task   (Jobs, helm post-install hooks)
+##   storefront, cms     -> nextjs       (Deployments)
+
+_railsSecurity: &railsSecurity
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: Always
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+_nextSecurity: &nextSecurity
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+web:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3000
+  resourcesPreset: none
+
+worker:
+  <<: *railsSecurity
+  command: [bundle, exec, sidekiq]
+  service:
+    enabled: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+  resourcesPreset: none
+
+migrate:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, db:prepare]
+  hook: post-install,post-upgrade
+  hookWeight: "-5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 3
+  resourcesPreset: none
+
+seed:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, db:seed]
+  hook: post-install
+  hookWeight: "0"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 1
+  resourcesPreset: none
+
+rake:
+  <<: *railsSecurity
+  command: [bundle, exec, rake, --version]  # tenant overrides per env
+  hook: post-install,post-upgrade
+  hookWeight: "5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 1
+  resourcesPreset: none
+
+storefront:
+  <<: *nextSecurity
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3001
+  resourcesPreset: none
+
+cms:
+  <<: *nextSecurity
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3000
+  resourcesPreset: none

@@ -1,0 +1,17 @@
+{{- if .Values.cnpg.scheduledBackup.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.cnpg.name }}-backup
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cnpg.scheduledBackup.schedule | quote }}
+  immediate: {{ .Values.cnpg.scheduledBackup.immediate }}
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.cnpg.name }}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end }}

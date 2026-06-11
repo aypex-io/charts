@@ -1,0 +1,23 @@
+{{- if .Values.cnpg.objectStore.enabled }}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: aws-s3
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  configuration:
+    destinationPath: s3://{{ .Values.cnpg.objectStore.bucket }}/{{ .Values.cnpg.objectStore.path }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "cnpg-backup") }}
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKey:
+        name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "cnpg-backup") }}
+        key: AWS_SECRET_ACCESS_KEY
+    wal:
+      compression: {{ .Values.cnpg.objectStore.walCompression }}
+  retentionPolicy: {{ .Values.cnpg.objectStore.retentionPolicy | quote }}
+  instanceSidecarConfiguration:
+    retentionPolicyIntervalSeconds: {{ .Values.cnpg.objectStore.retentionPolicyIntervalSeconds }}
+{{- end }}
