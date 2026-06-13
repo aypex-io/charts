@@ -8,8 +8,12 @@ metadata:
   namespace: {{ .Values.gateway.namespace }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
+  # admin may live on the apex (own listener) while api lives on a subdomain
+  # (wildcard listener), so each route binds only the listener its single
+  # hostname intersects — listing both would leave one parentRef with
+  # NoMatchingListenerHostname. Falls back to .fitness for single-listener setups.
   parentRefs:
-    {{- range .Values.gateway.sectionNames.fitness }}
+    {{- range (.Values.gateway.sectionNames.admin | default .Values.gateway.sectionNames.fitness) }}
     - name: {{ $.Values.gateway.name }}
       sectionName: {{ . }}
     {{- end }}
@@ -29,7 +33,7 @@ metadata:
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
   parentRefs:
-    {{- range .Values.gateway.sectionNames.fitness }}
+    {{- range (.Values.gateway.sectionNames.api | default .Values.gateway.sectionNames.fitness) }}
     - name: {{ $.Values.gateway.name }}
       sectionName: {{ . }}
     {{- end }}
