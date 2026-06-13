@@ -71,6 +71,22 @@ spec:
     - {{ .Values.hostnames.storefront | quote }}
     {{- end }}
   rules:
+    # Spree serves product images via Active Storage proxy URLs
+    # (/rails/active_storage/...) and its asset pipeline (/assets) — Rails streams
+    # them from S3. Those paths must reach the Spree backend (web), not the
+    # Next.js storefront, on the storefront domain (the image URL host). The more
+    # specific path match wins; everything else falls through to the storefront.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /rails/active_storage
+        - path:
+            type: PathPrefix
+            value: /assets
+      backendRefs:
+        - name: {{ $release }}-web
+          namespace: {{ $ns }}
+          port: 80
     - backendRefs:
         - name: {{ $release }}-storefront
           namespace: {{ $ns }}
