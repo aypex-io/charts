@@ -37,8 +37,16 @@ gateway:
   name: main
   namespace: envoy-gateway-system
   sectionNames:
-    fitness: []          # tenant + env supplies (admin + api routes)
+    fitness: []          # fallback for admin + api when .admin/.api unset
     com: []              # cms route (+ storefront fallback if .storefront unset)
+    # admin / api: per-route listeners. When the admin host is on the apex and
+    # the api host on a subdomain (or vice versa) they need DIFFERENT listeners
+    # — set each so its single hostname intersects exactly one listener (else a
+    # parentRef reports NoMatchingListenerHostname). Both fall back to .fitness.
+    #   admin: [example-fitness-https]            # apex listener
+    #   api:   [wildcard-example-fitness-https]   # wildcard listener
+    admin: []
+    api: []
     # storefront: listeners the storefront domains attach to. When unset the
     # storefront route falls back to `.com`. For a multi-domain store, list
     # every base-domain listener, e.g. (prod apex listeners):
