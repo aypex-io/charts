@@ -48,13 +48,24 @@ metadata:
   namespace: {{ .Values.gateway.namespace }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
+  # Multi-domain storefront: one Service, many public domains, each pinned to a
+  # Spree market by the storefront app. sectionNames.storefront lists every
+  # base-domain listener the domains attach to (falls back to .com for a
+  # single-domain store). The gateway binds each listener only to the
+  # intersecting hostname.
   parentRefs:
-    {{- range .Values.gateway.sectionNames.com }}
+    {{- range (.Values.gateway.sectionNames.storefront | default .Values.gateway.sectionNames.com) }}
     - name: {{ $.Values.gateway.name }}
       sectionName: {{ . }}
     {{- end }}
   hostnames:
+    {{- if kindIs "slice" .Values.hostnames.storefront }}
+    {{- range .Values.hostnames.storefront }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- else }}
     - {{ .Values.hostnames.storefront | quote }}
+    {{- end }}
   rules:
     - backendRefs:
         - name: {{ $release }}-storefront

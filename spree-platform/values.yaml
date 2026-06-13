@@ -14,6 +14,13 @@ clusterDomain: cluster.local
 
 ## @section Hostnames + gateway wiring
 ## All four hostnames come from the per-env overlay.
+## `storefront` may be a single host (string) or a list of hosts for a
+## multi-domain store (one market per domain), e.g.
+##   storefront:
+##     - example.com
+##     - example.us
+##     - example.uk
+##     - example.eu
 hostnames:
   admin: ""
   api: ""
@@ -30,8 +37,17 @@ gateway:
   name: main
   namespace: envoy-gateway-system
   sectionNames:
-    fitness: []          # tenant + env supplies
-    com: []
+    fitness: []          # tenant + env supplies (admin + api routes)
+    com: []              # cms route (+ storefront fallback if .storefront unset)
+    # storefront: listeners the storefront domains attach to. When unset the
+    # storefront route falls back to `.com`. For a multi-domain store, list
+    # every base-domain listener, e.g. (prod apex listeners):
+    #   storefront:
+    #     - example-com-https
+    #     - example-us-https
+    #     - example-uk-https
+    #     - example-eu-https
+    storefront: []
 
 ## @section CNPG cluster (shared by spree + payload)
 cnpg:
