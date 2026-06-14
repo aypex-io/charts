@@ -58,8 +58,36 @@ spec:
       {{- if .Values.podSecurityContext.enabled }}
       securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.podSecurityContext "context" $) | nindent 8 }}
       {{- end }}
-      {{- if .Values.initContainers }}
-      initContainers: {{- include "common.tplvalues.render" (dict "value" .Values.initContainers "context" $) | nindent 8 }}
+      {{- if or .Values.writableNextServer.enabled .Values.initContainers }}
+      initContainers:
+        {{- if .Values.writableNextServer.enabled }}
+        # Seed a writable copy of the built .next/server into an emptyDir so the
+        # app container can persist its ISR / Cache Components render cache under
+        # readOnlyRootFilesystem. Without this, Next.js writes to .next/server/app
+        # fail with EROFS and the cache degrades to a full render per request.
+        - name: seed-next-server
+          image: {{ include "common.images.image" (dict "imageRoot" .Values.image "global" .Values.global) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.containerSecurityContext.enabled }}
+          securityContext: {{- include "common.compatibility.renderSecurityContext" (dict "secContext" .Values.containerSecurityContext "context" $) | nindent 12 }}
+          {{- end }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              if [ ! -d "{{ .Values.writableNextServer.path }}" ]; then
+                echo "seed-next-server: {{ .Values.writableNextServer.path }} not found in image" >&2
+                exit 1
+              fi
+              cp -a "{{ .Values.writableNextServer.path }}/." /seed/
+          volumeMounts:
+            - name: next-server
+              mountPath: /seed
+        {{- end }}
+        {{- if .Values.initContainers }}
+        {{- include "common.tplvalues.render" (dict "value" .Values.initContainers "context" $) | nindent 8 }}
+        {{- end }}
       {{- end }}
       containers:
         - name: nextjs
@@ -114,6 +142,12 @@ spec:
           volumeMounts:
             - name: next-cache
               mountPath: /app/.next/cache
+            {{- if .Values.writableNextServer.enabled }}
+            # Writable copy of .next/server (seeded by the seed-next-server init
+            # container) so ISR / Cache Components can persist under a read-only root.
+            - name: next-server
+              mountPath: {{ .Values.writableNextServer.path }}
+            {{- end }}
             {{- if .Values.extraVolumeMounts }}
             {{- include "common.tplvalues.render" (dict "value" .Values.extraVolumeMounts "context" $) | nindent 12 }}
             {{- end }}
@@ -123,6 +157,10 @@ spec:
       volumes:
         - name: next-cache
           emptyDir: {}
+        {{- if .Values.writableNextServer.enabled }}
+        - name: next-server
+          emptyDir: {}
+        {{- end }}
         {{- if .Values.extraVolumes }}
         {{- include "common.tplvalues.render" (dict "value" .Values.extraVolumes "context" $) | nindent 8 }}
         {{- end }}

@@ -135,6 +135,28 @@ extraVolumeMounts: []
 initContainers: []
 sidecars: []
 
+## @section Writable .next/server (ISR / Cache Components on a read-only root)
+##
+## Next.js standalone writes its rendered-route cache back to .next/server/app
+## at runtime — ISR pages and Cache Components segments (*.html / *.rsc /
+## *.segment.rsc). Under readOnlyRootFilesystem those writes fail with EROFS and
+## the cache silently degrades to a full server render on every request.
+##
+## We can't just mount an emptyDir over .next/server because that path also
+## holds the build output (compiled route modules) — an empty volume would
+## shadow it and break the app. Instead an initContainer running the app image
+## seeds a writable emptyDir with a copy of the built .next/server, and the app
+## container mounts it read-write. The cache is per-pod ephemeral; a shared
+## cacheHandler is the durable cross-replica fix.
+##
+## Disabled by default — this chart is also consumed by non-ISR apps. Enable it
+## per-release (e.g. the storefront) once you've confirmed the image ships a
+## standalone .next/server.
+writableNextServer:
+  enabled: false
+  ## Path the app reads/writes its server-rendered cache from.
+  path: /app/.next/server
+
 ## @section ConfigMap
 ##
 ## Renders into a ConfigMap mounted via envFrom. Map of key->value strings.

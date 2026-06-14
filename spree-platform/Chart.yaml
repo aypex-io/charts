@@ -2,7 +2,7 @@ apiVersion: v2
 name: spree-platform
 description: Aypex Spree commerce platform umbrella — Spree backend (rails) + Next.js storefront + Payload CMS (nextjs) on a single CNPG cluster + Dragonfly per env. Multi-tenant; consumed by gitops with per-customer overlays.
 type: application
-version: 0.3.3
+version: 0.3.4
 appVersion: "1.0.0"
 dependencies:
   - name: common
@@ -29,10 +29,10 @@ dependencies:
     alias: rake
     repository: oci://ghcr.io/aypex-io/charts
   - name: nextjs
-    version: 0.1.1
+    version: 0.1.2
     alias: storefront
     repository: oci://ghcr.io/aypex-io/charts
   - name: nextjs
-    version: 0.1.1
+    version: 0.1.2
     alias: cms
     repository: oci://ghcr.io/aypex-io/charts

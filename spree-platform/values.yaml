@@ -229,6 +229,20 @@ web:
   containerPorts:
     http: 3000
   resourcesPreset: none
+  # Graceful rollout (lever B): a preStop drain lets the gateway deregister this
+  # endpoint before SIGTERM, so an umbrella roll doesn't sever in-flight storefront
+  # SSR fetches mid-request (the "Connection closed" hangs). Never drop below
+  # desired replicas during the roll.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  terminationGracePeriodSeconds: 40
+  lifecycleHooks:
+    preStop:
+      exec:
+        command: ["sh", "-c", "sleep 10"]
 
 worker:
   <<: *railsSecurity
@@ -277,6 +291,23 @@ storefront:
   containerPorts:
     http: 3001
   resourcesPreset: none
+  # The storefront runs Next.js standalone with cacheComponents on a read-only
+  # root. Seed a writable .next/server so ISR / Cache Components can persist
+  # their render cache instead of failing with EROFS on every revalidation.
+  writableNextServer:
+    enabled: true
+  # Graceful rollout (lever B): drain before SIGTERM so a roll doesn't drop the
+  # in-flight HTML document, and never drop below desired replicas.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  terminationGracePeriodSeconds: 40
+  lifecycleHooks:
+    preStop:
+      exec:
+        command: ["sh", "-c", "sleep 10"]
 
 cms:
   <<: *nextSecurity
