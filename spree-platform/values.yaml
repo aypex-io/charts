@@ -145,6 +145,10 @@ externalSecrets:
     cmsPayload: ""
     cmsS3: ""
     cnpgBackup: ""
+    # Shared storefront<->CMS on-publish revalidation token (single
+    # REVALIDATE_SECRET property). Materialised into the `<slug>-revalidate`
+    # Secret, consumed by both pods via extraEnvVarsSecret.
+    revalidate: ""
 
 ## @section S3 buckets — env overlay supplies.
 ## Under `global` so they propagate to the rails-server / nextjs subcharts,
