@@ -113,6 +113,11 @@ cnpg:
   databases: []          # tenant base overlay — see customers/tkf/base/values.yaml
 
 ## @section Dragonfly (Redis-compatible cache for Rails)
+## NOTE: this instance backs Sidekiq queues, Rails.cache AND ActionCable
+## (REDIS_URL=…/0 on web + worker). It runs WITHOUT eviction (Dragonfly OOMs
+## when full), because Sidekiq job state must never be evicted. Do NOT point
+## eviction-tolerant cache load (e.g. the storefront) at it — use
+## `storefrontCache` below, a separate instance that evicts instead of OOMing.
 dragonfly:
   enabled: true
   replicaCount: 1
@@ -129,6 +134,28 @@ dragonfly:
       memory: 512Mi
     limits:
       memory: 1Gi
+
+## @section Storefront cache Dragonfly (Next.js cacheHandler backend)
+## A DEDICATED Redis-compatible instance for the Next.js storefront's shared
+## cache handlers (ISR routes + Cache Components segments). Kept separate from
+## the Sidekiq/Rails dragonfly above so the page cache can never evict or OOM
+## job state. Runs with `--cache_mode=true` + `--maxmemory`, so under pressure
+## it evicts least-recently-used cache entries (which all carry TTLs) instead
+## of failing — exactly what a page cache wants. Ephemeral; cold-start
+## repopulates, so no persistence.
+storefrontCache:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 1
+  # Image reused from .Values.dragonfly.image (same Dragonfly build).
+  # Eviction threshold — keep comfortably under the container memory limit.
+  maxmemory: 384mb
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
 
 ## @section ExternalSecrets
 externalSecrets:
