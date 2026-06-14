@@ -1,0 +1,72 @@
+{{- if .Values.storefrontCache.enabled }}
+{{- /*
+Dedicated Dragonfly for the Next.js storefront cache handlers. Separate from the
+Sidekiq/Rails `{{ .Release.Name }}-dragonfly` so eviction-tolerant page cache can
+never OOM or evict job state. Runs in cache mode (LRU eviction at --maxmemory).
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-storefront-cache
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: storefront-cache
+spec:
+  replicas: {{ .Values.storefrontCache.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: storefront-cache
+  template:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+        app.kubernetes.io/component: storefront-cache
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dragonfly
+          image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
+          args:
+            - --logtostderr
+            - --proactor_threads={{ .Values.storefrontCache.proactorThreads }}
+            # Evict LRU under pressure instead of OOMing (page cache, not job state).
+            - --cache_mode=true
+            - --maxmemory={{ .Values.storefrontCache.maxmemory }}
+          ports:
+            - containerPort: 6379
+              name: dragonfly
+          readinessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.storefrontCache.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-storefront-cache
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: storefront-cache
+  ports:
+    - name: dragonfly
+      port: 6379
+      targetPort: dragonfly
+{{- end }}
