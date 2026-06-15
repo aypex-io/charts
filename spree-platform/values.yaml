@@ -112,22 +112,27 @@ cnpg:
   ## don't depend on postInitSQL (which doesn't run during recovery-from-backup).
   databases: []          # tenant base overlay — see customers/tkf/base/values.yaml
 
-## @section Dragonfly (Redis-compatible store for Sidekiq + ActionCable)
-## NOTE: this instance backs Sidekiq queues AND ActionCable (REDIS_URL=…/0 on
-## web + worker). It runs WITHOUT eviction (Dragonfly OOMs when full), because
-## Sidekiq job state must never be evicted. Do NOT point eviction-tolerant cache
-## load at it — Rails.cache (REDIS_CACHE_URL) and the storefront both use
-## `redisCache` below, a separate instance that evicts LRU instead of OOMing.
+## @section Dragonfly engine image (shared by all redis-* instances below)
+## Every redis-{queue,cache,cable} instance runs the same Dragonfly build; the
+## image lives here once and the three instance blocks reference it.
 dragonfly:
-  enabled: true
-  replicaCount: 1
-  proactorThreads: 2
   image:
     # docker.dragonflydb.io IS the registry; previous values doubled it up
     # under docker.io which resolved to a non-existent docker.io image.
     registry: docker.dragonflydb.io
     repository: dragonflydb/dragonfly
     tag: latest
+
+## @section Redis queue Dragonfly (Sidekiq job queues)
+## Persistent store for Sidekiq queues (REDIS_URL=…/0 on web + worker). Runs
+## WITHOUT eviction (Dragonfly OOMs when full) because losing a queued/in-flight
+## job is data loss. Do NOT point eviction-tolerant cache load here — that's
+## `redisCache`. ActionCable moved off this to `redisCable` in 0.5.0.
+## (Renamed from `dragonfly` in 0.5.0; resource name `{release}-redis-queue`.)
+redisQueue:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
   resources:
     requests:
       cpu: 100m
@@ -135,11 +140,27 @@ dragonfly:
     limits:
       memory: 1Gi
 
+## @section Redis cable Dragonfly (ActionCable pub/sub)
+## Dedicated instance for ActionCable pub/sub (CABLE_REDIS_URL=…/0). Pub/sub is
+## transient (no stored keys), so it stays tiny and runs without eviction or
+## persistence. Requires a backend image whose config/cable.yml reads
+## CABLE_REDIS_URL (falls back to REDIS_URL on older images). New in 0.5.0.
+redisCable:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 256Mi
+
 ## @section Redis cache Dragonfly (shared LRU cache backend)
 ## A DEDICATED eviction-tolerant Redis-compatible instance shared by:
 ##   * the Next.js storefront cache handlers (ISR + Cache Components) — db 0
 ##   * the Rails backend `Rails.cache` (REDIS_CACHE_URL) — db 1
-## Kept separate from the Sidekiq/Rails dragonfly above so page + fragment cache
+## Kept separate from the redisQueue instance above so page + fragment cache
 ## can never evict or OOM job state. Runs with `--cache_mode=true` + `--maxmemory`
 ## so under pressure it evicts least-recently-used entries (all carry TTLs)
 ## instead of failing — exactly what a cache wants. Ephemeral; cold-start

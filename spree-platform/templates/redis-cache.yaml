@@ -3,7 +3,7 @@
 Shared eviction-tolerant Dragonfly cache, used by BOTH the Next.js storefront
 (cache handlers — ISR routes + Cache Components segments, logical db 0) AND the
 Rails backend (Rails.cache via REDIS_CACHE_URL, logical db 1). Kept separate
-from the Sidekiq/Rails `{{ .Release.Name }}-dragonfly` so eviction-tolerant page
+from the Sidekiq `{{ .Release.Name }}-redis-queue` so eviction-tolerant page
 + fragment cache can never OOM or evict job state. Runs in cache mode (LRU
 eviction at --maxmemory). Ephemeral; cold-start repopulates, so no persistence.
 */}}

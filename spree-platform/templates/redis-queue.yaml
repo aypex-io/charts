@@ -1,21 +1,28 @@
-{{- if .Values.dragonfly.enabled }}
+{{- if .Values.redisQueue.enabled }}
+{{- /*
+Persistent Redis-compatible store for Sidekiq job queues (REDIS_URL, db 0).
+Runs WITHOUT eviction — Dragonfly OOMs when full rather than dropping keys,
+because losing a queued/in-flight job is data loss. ActionCable used to share
+this too; it now has its own `{{ .Release.Name }}-redis-cable`. Renamed from
+`{{ .Release.Name }}-dragonfly` in 0.5.0.
+*/}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-dragonfly
+  name: {{ .Release.Name }}-redis-queue
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
-    app.kubernetes.io/component: cache
+    app.kubernetes.io/component: redis-queue
 spec:
-  replicas: {{ .Values.dragonfly.replicaCount }}
+  replicas: {{ .Values.redisQueue.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: cache
+      app.kubernetes.io/component: redis-queue
   template:
     metadata:
       labels: {{- include "spree-store.labels" . | nindent 8 }}
-        app.kubernetes.io/component: cache
+        app.kubernetes.io/component: redis-queue
     spec:
       securityContext:
         runAsNonRoot: true
@@ -28,7 +35,8 @@ spec:
           image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
           args:
             - --logtostderr
-            - --proactor_threads={{ .Values.dragonfly.proactorThreads }}
+            - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
+            - --version_check=false
           ports:
             - containerPort: 6379
               name: dragonfly
@@ -40,7 +48,7 @@ spec:
             tcpSocket:
               port: dragonfly
             initialDelaySeconds: 15
-          resources: {{- toYaml .Values.dragonfly.resources | nindent 12 }}
+          resources: {{- toYaml .Values.redisQueue.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -50,13 +58,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-dragonfly
+  name: {{ .Release.Name }}-redis-queue
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: cache
+    app.kubernetes.io/component: redis-queue
   ports:
     - name: dragonfly
       port: 6379
