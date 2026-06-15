@@ -1,0 +1,74 @@
+{{- if .Values.redisCable.enabled }}
+{{- /*
+Dedicated Redis-compatible instance for ActionCable pub/sub (CABLE_REDIS_URL,
+db 0). Separate from the Sidekiq `{{ .Release.Name }}-redis-queue` and the
+`{{ .Release.Name }}-redis-cache` so WebSocket fan-out traffic can't contend
+with job state or get evicted by cache pressure. Pub/sub is transient (no
+stored keys), so this stays tiny and runs without eviction or persistence.
+Requires a backend image whose config/cable.yml reads CABLE_REDIS_URL
+(falls back to REDIS_URL otherwise, so older images keep working).
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis-cable
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-cable
+spec:
+  replicas: {{ .Values.redisCable.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis-cable
+  template:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis-cable
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dragonfly
+          image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
+          args:
+            - --logtostderr
+            - --proactor_threads={{ .Values.redisCable.proactorThreads }}
+            - --version_check=false
+          ports:
+            - containerPort: 6379
+              name: dragonfly
+          readinessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.redisCable.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-cable
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: redis-cable
+  ports:
+    - name: dragonfly
+      port: 6379
+      targetPort: dragonfly
+{{- end }}
