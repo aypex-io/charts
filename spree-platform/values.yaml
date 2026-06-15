@@ -205,6 +205,13 @@ externalSecrets:
     # REVALIDATE_SECRET property). Materialised into the `<slug>-revalidate`
     # Secret, consumed by both pods via extraEnvVarsSecret.
     revalidate: ""
+    # Resend API key (single RESEND_API_KEY property) → `<slug>-resend` Secret;
+    # the storefront's transactional-email sender.
+    resend: ""
+    # Spree->storefront webhook signing secret (per-env spree_webhook_secret_<env>
+    # remapped → SPREE_WEBHOOK_SECRET) → `<slug>-webhook` Secret; shared by the
+    # Spree backend (WebhookEndpoint) and the storefront's HMAC verifier.
+    webhook: ""
 
 ## @section S3 buckets — env overlay supplies.
 ## Under `global` so they propagate to the rails-server / nextjs subcharts,
