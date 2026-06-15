@@ -112,12 +112,12 @@ cnpg:
   ## don't depend on postInitSQL (which doesn't run during recovery-from-backup).
   databases: []          # tenant base overlay — see customers/tkf/base/values.yaml
 
-## @section Dragonfly (Redis-compatible cache for Rails)
-## NOTE: this instance backs Sidekiq queues, Rails.cache AND ActionCable
-## (REDIS_URL=…/0 on web + worker). It runs WITHOUT eviction (Dragonfly OOMs
-## when full), because Sidekiq job state must never be evicted. Do NOT point
-## eviction-tolerant cache load (e.g. the storefront) at it — use
-## `storefrontCache` below, a separate instance that evicts instead of OOMing.
+## @section Dragonfly (Redis-compatible store for Sidekiq + ActionCable)
+## NOTE: this instance backs Sidekiq queues AND ActionCable (REDIS_URL=…/0 on
+## web + worker). It runs WITHOUT eviction (Dragonfly OOMs when full), because
+## Sidekiq job state must never be evicted. Do NOT point eviction-tolerant cache
+## load at it — Rails.cache (REDIS_CACHE_URL) and the storefront both use
+## `redisCache` below, a separate instance that evicts LRU instead of OOMing.
 dragonfly:
   enabled: true
   replicaCount: 1
@@ -135,27 +135,31 @@ dragonfly:
     limits:
       memory: 1Gi
 
-## @section Storefront cache Dragonfly (Next.js cacheHandler backend)
-## A DEDICATED Redis-compatible instance for the Next.js storefront's shared
-## cache handlers (ISR routes + Cache Components segments). Kept separate from
-## the Sidekiq/Rails dragonfly above so the page cache can never evict or OOM
-## job state. Runs with `--cache_mode=true` + `--maxmemory`, so under pressure
-## it evicts least-recently-used cache entries (which all carry TTLs) instead
-## of failing — exactly what a page cache wants. Ephemeral; cold-start
+## @section Redis cache Dragonfly (shared LRU cache backend)
+## A DEDICATED eviction-tolerant Redis-compatible instance shared by:
+##   * the Next.js storefront cache handlers (ISR + Cache Components) — db 0
+##   * the Rails backend `Rails.cache` (REDIS_CACHE_URL) — db 1
+## Kept separate from the Sidekiq/Rails dragonfly above so page + fragment cache
+## can never evict or OOM job state. Runs with `--cache_mode=true` + `--maxmemory`
+## so under pressure it evicts least-recently-used entries (all carry TTLs)
+## instead of failing — exactly what a cache wants. Ephemeral; cold-start
 ## repopulates, so no persistence.
-storefrontCache:
+## (Renamed from `storefrontCache` in 0.4.0 — now serves the backend too.)
+redisCache:
   enabled: true
   replicaCount: 1
-  proactorThreads: 1
+  # Two proactor threads now that both the storefront and Rails share it.
+  proactorThreads: 2
   # Image reused from .Values.dragonfly.image (same Dragonfly build).
-  # Eviction threshold — keep comfortably under the container memory limit.
-  maxmemory: 384mb
+  # Eviction ceiling — held at ~75% of the container memory limit so Dragonfly's
+  # own per-shard bookkeeping has headroom before the cgroup OOM-kills it.
+  maxmemory: 576mb
   resources:
     requests:
-      cpu: 50m
-      memory: 256Mi
+      cpu: 100m
+      memory: 384Mi
     limits:
-      memory: 512Mi
+      memory: 768Mi
 
 ## @section ExternalSecrets
 externalSecrets:
