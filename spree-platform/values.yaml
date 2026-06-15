@@ -208,9 +208,10 @@ externalSecrets:
     # Resend API key (single RESEND_API_KEY property) → `<slug>-resend` Secret;
     # the storefront's transactional-email sender.
     resend: ""
-    # Spree->storefront webhook signing secret (per-env spree_webhook_secret_<env>
-    # remapped → SPREE_WEBHOOK_SECRET) → `<slug>-webhook` Secret; shared by the
-    # Spree backend (WebhookEndpoint) and the storefront's HMAC verifier.
+    # Spree->storefront webhook signing secret (single SPREE_WEBHOOK_SECRET
+    # property) → `<slug>-webhook` Secret; shared by the Spree backend
+    # (WebhookEndpoint) and the storefront's HMAC verifier. Set PER-ENV in the
+    # overlay (one ASM secret per namespace: N27a/<slug>-<env>/webhook).
     webhook: ""
 
 ## @section S3 buckets — env overlay supplies.
