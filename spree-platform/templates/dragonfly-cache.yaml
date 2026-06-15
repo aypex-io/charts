@@ -1,26 +1,29 @@
-{{- if .Values.storefrontCache.enabled }}
+{{- if .Values.redisCache.enabled }}
 {{- /*
-Dedicated Dragonfly for the Next.js storefront cache handlers. Separate from the
-Sidekiq/Rails `{{ .Release.Name }}-dragonfly` so eviction-tolerant page cache can
-never OOM or evict job state. Runs in cache mode (LRU eviction at --maxmemory).
+Shared eviction-tolerant Dragonfly cache, used by BOTH the Next.js storefront
+(cache handlers — ISR routes + Cache Components segments, logical db 0) AND the
+Rails backend (Rails.cache via REDIS_CACHE_URL, logical db 1). Kept separate
+from the Sidekiq/Rails `{{ .Release.Name }}-dragonfly` so eviction-tolerant page
++ fragment cache can never OOM or evict job state. Runs in cache mode (LRU
+eviction at --maxmemory). Ephemeral; cold-start repopulates, so no persistence.
 */}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-storefront-cache
+  name: {{ .Release.Name }}-redis-cache
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
-    app.kubernetes.io/component: storefront-cache
+    app.kubernetes.io/component: redis-cache
 spec:
-  replicas: {{ .Values.storefrontCache.replicaCount }}
+  replicas: {{ .Values.redisCache.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: storefront-cache
+      app.kubernetes.io/component: redis-cache
   template:
     metadata:
       labels: {{- include "spree-store.labels" . | nindent 8 }}
-        app.kubernetes.io/component: storefront-cache
+        app.kubernetes.io/component: redis-cache
     spec:
       securityContext:
         runAsNonRoot: true
@@ -33,10 +36,16 @@ spec:
           image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
           args:
             - --logtostderr
-            - --proactor_threads={{ .Values.storefrontCache.proactorThreads }}
-            # Evict LRU under pressure instead of OOMing (page cache, not job state).
+            - --proactor_threads={{ .Values.redisCache.proactorThreads }}
+            # Evict LRU under pressure instead of OOMing (page + fragment cache,
+            # not job state). All entries carry TTLs.
             - --cache_mode=true
-            - --maxmemory={{ .Values.storefrontCache.maxmemory }}
+            # Hard eviction ceiling — keep comfortably under the container memory
+            # limit so Dragonfly's own bookkeeping never trips the cgroup OOM.
+            - --maxmemory={{ .Values.redisCache.maxmemory }}
+            # Skip the startup phone-home version check (locked-down cluster, no
+            # egress; avoids a slow boot probe + log noise).
+            - --version_check=false
           ports:
             - containerPort: 6379
               name: dragonfly
@@ -48,7 +57,7 @@ spec:
             tcpSocket:
               port: dragonfly
             initialDelaySeconds: 15
-          resources: {{- toYaml .Values.storefrontCache.resources | nindent 12 }}
+          resources: {{- toYaml .Values.redisCache.resources | nindent 12 }}
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -58,13 +67,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-storefront-cache
+  name: {{ .Release.Name }}-redis-cache
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
   selector:
     app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: storefront-cache
+    app.kubernetes.io/component: redis-cache
   ports:
     - name: dragonfly
       port: 6379
