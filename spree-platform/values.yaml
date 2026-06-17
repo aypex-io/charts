@@ -35,7 +35,7 @@ publicURL:
 
 gateway:
   name: main
-  namespace: envoy-gateway-system
+  namespace: gateway
   sectionNames:
     fitness: []          # fallback for admin + api when .admin/.api unset
     com: []              # cms route (+ storefront fallback if .storefront unset)
