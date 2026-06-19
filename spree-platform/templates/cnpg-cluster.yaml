@@ -11,6 +11,14 @@ spec:
   enableSuperuserAccess: false
   minSyncReplicas: 0
   maxSyncReplicas: {{ .Values.cnpg.maxSyncReplicas }}
+  # Expose per-instance CNPG metrics (:9187 /metrics) to obs/Alloy via
+  # prometheus.io pod annotations (no PodMonitor CRD in the cluster). Surfaces
+  # this cluster in the obs "CNPG — PostgreSQL" dashboard. Mirrors the
+  # obs-grafana-db / keycloak-db fix.
+  inheritedMetadata:
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9187"
 
   {{- with .Values.cnpg.parameters }}
   postgresql:
