@@ -22,6 +22,14 @@ spec:
       app.kubernetes.io/component: redis-cache
   template:
     metadata:
+      # Dragonfly serves Prometheus metrics over HTTP on its main port
+      # (6379 /metrics). No PodMonitor CRD here — obs/Alloy discovers targets by
+      # prometheus.io pod annotations. Surfaces this instance in the obs
+      # "Dragonfly — Redis / Cache" dashboard (hit ratio, memory, evictions).
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+        prometheus.io/path: /metrics
       labels: {{- include "spree-store.labels" . | nindent 8 }}
         app.kubernetes.io/component: redis-cache
     spec:

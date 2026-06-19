@@ -23,6 +23,12 @@ spec:
       app.kubernetes.io/component: redis-cable
   template:
     metadata:
+      # Dragonfly serves Prometheus metrics over HTTP on its main port
+      # (6379 /metrics) — discovered via prometheus.io pod annotations.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+        prometheus.io/path: /metrics
       labels: {{- include "spree-store.labels" . | nindent 8 }}
         app.kubernetes.io/component: redis-cable
     spec:
