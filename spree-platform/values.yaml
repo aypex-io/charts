@@ -186,6 +186,34 @@ redisCache:
     limits:
       memory: 768Mi
 
+## @section Meilisearch (product search engine)
+## Optional, opinion-free, disabled by default so tenants on the DB search
+## provider are unaffected. When enabled, Spree's built-in
+## Spree::SearchProvider::Meilisearch takes over IFF the backend also gets
+## MEILISEARCH_URL set (wired in the consuming overlay's _railsEnv anchor).
+## Single-node by design — Meilisearch OSS has no clustering, so durability
+## comes from a PVC (index survives restarts) + Spree's auto-index-on-save,
+## NOT from replicas. The PVC is RWO, so the Deployment uses strategy Recreate.
+## Auth: MEILI_MASTER_KEY is read from the spree-rails Secret (key
+## MEILISEARCH_API_KEY) — see templates/externalsecrets.yaml. Pin the image tag
+## (an on-disk index format lives in the PVC; do NOT track `latest`).
+meilisearch:
+  enabled: false
+  image:
+    registry: docker.io
+    repository: getmeili/meilisearch
+    tag: v1.47
+  persistence:
+    size: 5Gi
+    storageClass: ceph-block-r1
+  # Pod resources — sized per-env in the consuming overlays.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
 ## @section ExternalSecrets
 externalSecrets:
   storeName: cluster-secret-store

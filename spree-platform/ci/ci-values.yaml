@@ -1,7 +1,7 @@
 # CI render fixture — a representative tenant so `helm template` exercises every
 # template (CNPG cluster/databases/pooler/objectstore/scheduledbackup, dragonfly,
-# externalsecrets, httproutes, referencegrant, job-cms-migrate). Not a real
-# deployment; values mirror the shape of a gitops customers/<slug> overlay.
+# meilisearch, externalsecrets, httproutes, referencegrant, job-cms-migrate). Not
+# a real deployment; values mirror the shape of a gitops customers/<slug> overlay.
 customer:
   slug: ci
 env: stg
@@ -48,10 +48,15 @@ externalSecrets:
     cmsS3: service_user/prod/ci-payload-stg
     cnpgBackup: service_user/prod/cnpg
 
+meilisearch:
+  enabled: true
+
 global:
   s3:
     spreeBucket: ci-spree-stg-storage
     cmsBucket: ci-payload-stg-media
+  # Lights up the Meilisearch search provider on the backend (the in-cluster svc).
+  meilisearchUrl: http://ci-meilisearch:7700
 
 images:
   spree: "0.0.0"

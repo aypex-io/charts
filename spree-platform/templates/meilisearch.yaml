@@ -1,0 +1,118 @@
+{{- if .Values.meilisearch.enabled }}
+{{- /*
+Meilisearch product-search engine for the Spree backend. Enabled per-env via
+the consuming overlay; the backend only routes search through it when its
+_railsEnv anchor also sets MEILISEARCH_URL (http://{{ .Release.Name }}-meilisearch:7700).
+
+Single-node by design (Meilisearch OSS has no clustering): one replica with a
+durable RWO PVC at /meili_data. The PVC is the durability story — the index
+survives pod restarts, and Spree re-indexes on product save, so a one-time
+`rake spree:search:reindex` (the backend `rake` Job) backfills the existing
+catalog. strategy: Recreate because two pods can't mount the same RWO volume.
+
+Auth: MEILI_MASTER_KEY comes from the spree-rails Secret (key MEILISEARCH_API_KEY),
+the same value the backend reads as MEILISEARCH_API_KEY — one key, two consumers.
+*/}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-meilisearch
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: meilisearch
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.meilisearch.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.meilisearch.persistence.size }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-meilisearch
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: meilisearch
+spec:
+  replicas: 1
+  strategy:
+    # RWO PVC — a rolling update would deadlock on two pods mounting the volume.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: meilisearch
+  template:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+        app.kubernetes.io/component: meilisearch
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: meilisearch
+          image: {{ .Values.meilisearch.image.registry }}/{{ .Values.meilisearch.image.repository }}:{{ .Values.meilisearch.image.tag }}
+          env:
+            - name: MEILI_ENV
+              value: production
+            - name: MEILI_NO_ANALYTICS
+              value: "true"
+            - name: MEILI_DB_PATH
+              value: /meili_data
+            - name: MEILI_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") }}
+                  key: MEILISEARCH_API_KEY
+          ports:
+            - containerPort: 7700
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.meilisearch.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /meili_data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-meilisearch
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-meilisearch
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: meilisearch
+  ports:
+    - name: http
+      port: 7700
+      targetPort: http
+{{- end }}
