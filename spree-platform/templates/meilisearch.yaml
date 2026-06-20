@@ -63,8 +63,13 @@ spec:
               value: production
             - name: MEILI_NO_ANALYTICS
               value: "true"
+            # DB path MUST be a subdir of the PVC mount, not the mount root. A
+            # freshly formatted block PVC (Ceph RBD → ext4) contains a lost+found
+            # dir, so /meili_data is non-empty → Meilisearch tries to infer a DB
+            # version from it, finds no VERSION file, and aborts ("failed to infer
+            # the version of the database"). Nesting under data.ms sidesteps it.
             - name: MEILI_DB_PATH
-              value: /meili_data
+              value: /meili_data/data.ms
             - name: MEILI_MASTER_KEY
               valueFrom:
                 secretKeyRef:
