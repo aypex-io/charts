@@ -134,8 +134,17 @@ dragonfly:
 ## (Renamed from `dragonfly` in 0.5.0; resource name `{release}-redis-queue`.)
 redisQueue:
   enabled: true
+  # Single master only — see redis-queue.yaml. replicaCount is retained for
+  # back-compat but IGNORED by the template (the RWO PVC enforces one pod).
   replicaCount: 1
   proactorThreads: 2
+  # Snapshot persistence so a pod restart doesn't drop queued/scheduled/retry
+  # jobs. Tiny store → a small PVC; snapshots are MB. ceph-block-r1 matches the
+  # CNPG/Meilisearch pattern. snapshotCron bounds loss on ungraceful death.
+  persistence:
+    size: 2Gi
+    storageClass: ceph-block-r1
+    snapshotCron: "*/5 * * * *"
   resources:
     requests:
       cpu: 100m

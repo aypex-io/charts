@@ -5,6 +5,14 @@ Runs WITHOUT eviction — Dragonfly OOMs when full rather than dropping keys,
 because losing a queued/in-flight job is data loss. ActionCable used to share
 this too; it now has its own `{{ .Release.Name }}-redis-cable`. Renamed from
 `{{ .Release.Name }}-dragonfly` in 0.5.0.
+
+SINGLE master, persisted (0.9.0): one replica only — Dragonfly has no built-in
+replication here, so >1 pod behind the Service would split the queue across
+independent masters (stranded jobs, duplicate cron). The RWO PVC enforces this
+(two pods can't mount it) and `strategy: Recreate` releases the volume before
+the replacement mounts. Snapshots (--dir/--dbfilename/--snapshot_cron below)
+make the queue survive restarts: load-on-start + save-on-shutdown, with the
+cron bounding loss on ungraceful death.
 */}}
 apiVersion: apps/v1
 kind: Deployment
@@ -14,7 +22,11 @@ metadata:
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis-queue
 spec:
-  replicas: {{ .Values.redisQueue.replicaCount }}
+  # Always 1 — a Sidekiq queue must be a single master, and the RWO PVC below
+  # can only attach to one pod. redisQueue.replicaCount is intentionally ignored.
+  replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/instance: {{ .Release.Name }}
@@ -48,6 +60,16 @@ spec:
             # threads instead of hash-by-value, so several hot queues don't pin
             # to one thread and bottleneck. No effect when proactor_threads=1.
             - --shard_round_robin_prefix=queue:
+            # Persistence: snapshot to the PVC at /data. dbfilename (fixed, no
+            # {timestamp}) → a single overwriting dump that Dragonfly loads on
+            # startup and rewrites on graceful shutdown. snapshot_cron is the
+            # safety net for ungraceful death (OOM/SIGKILL/node loss), bounding
+            # worst-case job loss to the cron interval.
+            - --dir=/data
+            - --dbfilename=dump
+            # Quote the whole argv element so the spaces in the cron value stay
+            # one argument (and no literal quotes leak into the value).
+            - {{ printf "--snapshot_cron=%s" .Values.redisQueue.persistence.snapshotCron | quote }}
           ports:
             - containerPort: 6379
               name: dragonfly
@@ -65,6 +87,28 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-redis-queue
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-redis-queue
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-queue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.redisQueue.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.redisQueue.persistence.size }}
 ---
 apiVersion: v1
 kind: Service
