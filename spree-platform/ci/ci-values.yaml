@@ -63,6 +63,25 @@ images:
   storefront: "0.0.0"
   cms: "0.0.0"
 
+# Exercise the nightly prod→staging refresh CronJob template.
+jobs:
+  stagingRefresh:
+    enabled: true
+    awsSecret: ci-stg-refresh
+    backup:
+      bucket: ci-data-backups
+      path: pg/ci/prd
+    databases:
+      - { name: spree, owner: spree, passwordSecret: ci-spree-db }
+      - { name: payload, owner: payload, passwordSecret: ci-cms-db }
+    mediaSync:
+      - { from: ci-spree-prd-storage, to: ci-spree-stg-storage }
+      - { from: ci-payload-prd-media, to: ci-payload-stg-media }
+    railsEnv:
+      - { name: SMTP_FROM_ADDRESS, value: no-reply@example.test }
+      - { name: TKF_ALLOW_SANITIZE, value: "1" }
+      - { name: STORE_URL, value: stg.example.test }
+
 web:
   image: { registry: ghcr.io, repository: ci/spree, tag: "0.0.0" }
 worker:

@@ -1,0 +1,269 @@
+{{- /*
+Nightly prod→staging data refresh (sanitize-before-load).
+
+Rebuilds stg's `spree` + `payload` databases from PRODUCTION's existing barman
+backup in S3, NEVER touching the prod database. All restore + migrate + sanitize
+work happens against a throwaway Postgres that runs *inside this pod* (native
+sidecar on an ephemeral PVC); stg's `tkf-db` only ever receives the already-
+sanitized, already-migrated dump. A successful run is also a DR drill — it proves
+the prod backup chain is restorable.
+
+Gated on .Values.jobs.stagingRefresh.enabled (default false) so it renders ONLY
+in the stg overlay. See charts/spree-platform/values.yaml jobs.stagingRefresh and
+the backend `tkf:staging:sanitize` rake task.
+
+Native sidecars (restartPolicy:Always initContainers) need k8s >= 1.28 — verified
+on N27a before enabling.
+*/ -}}
+{{- if .Values.jobs.stagingRefresh.enabled }}
+{{- $r := .Values.jobs.stagingRefresh -}}
+{{- $pgImage := $r.pgImage | default .Values.cnpg.imageName -}}
+{{- $spreeImage := printf "%s/%s:%s" .Values.web.image.registry .Values.web.image.repository .Values.images.spree -}}
+{{- $payloadImage := printf "%s/%s:%s" .Values.cms.image.registry .Values.cms.image.repository .Values.images.cms -}}
+{{- $serverName := $r.backup.serverName | default .Values.cnpg.name -}}
+{{- $stgRw := printf "%s-rw" .Values.cnpg.name -}}
+{{- $spreeDb := include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-db") -}}
+{{- $cmsDb := include "spree-store.resourceName" (dict "ctx" . "suffix" "cms-db") -}}
+{{- $railsSecret := include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") -}}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "staging-refresh") }}
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  schedule: {{ $r.schedule | quote }}
+  concurrencyPolicy: {{ $r.concurrencyPolicy }}
+  successfulJobsHistoryLimit: {{ $r.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $r.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+    spec:
+      backoffLimit: {{ $r.backoffLimit }}
+      ttlSecondsAfterFinished: {{ $r.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels: {{- include "spree-store.labels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          # CNPG operand runs as uid/gid 26 (postgres). fsGroup 26 makes the
+          # ephemeral PVC group-writable so the Rails (uid 1000) phases can also
+          # read/write /work via the shared group.
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 26
+            runAsGroup: 26
+            fsGroup: 26
+            fsGroupChangePolicy: OnRootMismatch
+          volumes:
+            # Ephemeral CSI scratch — holds $PGDATA + WAL + the logical dumps.
+            # Dies with the pod, so raw prod data never persists in stg.
+            - name: work
+              ephemeral:
+                volumeClaimTemplate:
+                  spec:
+                    accessModes: ["ReadWriteOnce"]
+                    storageClassName: {{ $r.scratchVolume.storageClass }}
+                    resources:
+                      requests:
+                        storage: {{ $r.scratchVolume.size }}
+            - name: tmp
+              emptyDir: {}
+
+          initContainers:
+            # ---- Phase 1: restore the latest prod base backup into $PGDATA ----
+            - name: restore
+              image: {{ $pgImage }}
+              securityContext: {{- include "spree-store.refreshPgSecurity" . | nindent 16 }}
+              env:
+                - name: PGDATA
+                  value: /work/pgdata
+                - name: AWS_REGION
+                  value: {{ $r.awsRegion }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_SECRET_ACCESS_KEY
+              command: [/bin/bash, -c]
+              args:
+                - |
+                  set -euo pipefail
+                  echo "[restore] fetching latest base backup for server '{{ $serverName }}'"
+                  rm -rf "$PGDATA" && mkdir -p "$PGDATA"
+                  barman-cloud-restore \
+                    "s3://{{ $r.backup.bucket }}/{{ $r.backup.path }}" \
+                    "{{ $serverName }}" latest "$PGDATA"
+                  # Replay WAL on start, then promote to a standalone primary.
+                  touch "$PGDATA/recovery.signal"
+                  cat > "$PGDATA/override.recovery.conf" <<EOF
+                  restore_command = 'barman-cloud-wal-restore s3://{{ $r.backup.bucket }}/{{ $r.backup.path }} {{ $serverName }} %f %p'
+                  recovery_target_action = 'promote'
+                  EOF
+                  cat "$PGDATA/override.recovery.conf" >> "$PGDATA/postgresql.conf"
+                  # Local-only trust auth — no prod creds needed downstream.
+                  echo "local all all trust"            >  "$PGDATA/pg_hba.conf"
+                  echo "host  all all 127.0.0.1/32 trust" >> "$PGDATA/pg_hba.conf"
+                  echo "host  all all ::1/128     trust" >> "$PGDATA/pg_hba.conf"
+                  echo "listen_addresses = '127.0.0.1'"  >> "$PGDATA/postgresql.conf"
+                  echo "[restore] done"
+              volumeMounts:
+                - { name: work, mountPath: /work }
+
+            # ---- Phase 2: local Postgres sidecar (stays up for phases 3-6) ----
+            - name: local-pg
+              image: {{ $pgImage }}
+              restartPolicy: Always   # native sidecar (k8s >= 1.28)
+              securityContext: {{- include "spree-store.refreshPgSecurity" . | nindent 16 }}
+              env:
+                - name: PGDATA
+                  value: /work/pgdata
+              command: [/bin/bash, -c]
+              args:
+                - |
+                  set -euo pipefail
+                  echo "[local-pg] starting; replaying WAL + promoting"
+                  exec postgres -D "$PGDATA"
+              startupProbe:
+                exec:
+                  command: [/bin/sh, -c, "pg_isready -h 127.0.0.1 -U postgres || pg_isready -h 127.0.0.1"]
+                periodSeconds: 5
+                failureThreshold: 60
+              volumeMounts:
+                - { name: work, mountPath: /work }
+
+            # ---- Phase 3: migrate the dumped Spree schema up to stg code ----
+            - name: migrate-spree
+              image: {{ $spreeImage }}
+              securityContext: {{- include "spree-store.refreshRailsSecurity" . | nindent 16 }}
+              command: [/bin/sh, -c]
+              args:
+                - |
+                  set -e
+                  echo "[migrate-spree] db:migrate against local PG"
+                  bundle exec rails db:migrate
+              env: {{- include "spree-store.refreshRailsEnv" (dict "ctx" . "db" "spree") | nindent 16 }}
+              envFrom:
+                - secretRef:
+                    name: {{ $railsSecret }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+
+            # ---- Phase 4: migrate the dumped Payload schema ----
+            - name: migrate-payload
+              image: {{ $payloadImage }}
+              securityContext: {{- include "spree-store.refreshRailsSecurity" . | nindent 16 }}
+              command: [./node_modules/.bin/payload, migrate]
+              env:
+                - name: NODE_ENV
+                  value: production
+                - name: DATABASE_URI
+                  value: "postgresql://payload@127.0.0.1:5432/payload"
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+
+            # ---- Phase 5: sanitize (scrub PII, kill payments, reinstate keys) ----
+            - name: sanitize
+              image: {{ $spreeImage }}
+              securityContext: {{- include "spree-store.refreshRailsSecurity" . | nindent 16 }}
+              command: [/bin/sh, -c]
+              args:
+                - |
+                  set -e
+                  echo "[sanitize] tkf:staging:sanitize"
+                  bundle exec rails tkf:staging:sanitize
+                  echo "[sanitize] db:seed (idempotent Tkf::Seeds — store url + markets)"
+                  bundle exec rails db:seed
+              env: {{- include "spree-store.refreshRailsEnv" (dict "ctx" . "db" "spree") | nindent 16 }}
+              envFrom:
+                - secretRef:
+                    name: {{ $railsSecret }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+
+            # ---- Phase 6: dump the now-sanitized databases ----
+            - name: dump
+              image: {{ $pgImage }}
+              securityContext: {{- include "spree-store.refreshPgSecurity" . | nindent 16 }}
+              command: [/bin/bash, -c]
+              args:
+                - |
+                  set -euo pipefail
+                  mkdir -p /work/dumps
+                  {{- range $r.databases }}
+                  echo "[dump] pg_dump {{ .name }}"
+                  pg_dump -Fc -h 127.0.0.1 -U {{ .owner }} {{ .name }} > /work/dumps/{{ .name }}.dump
+                  {{- end }}
+                  echo "[dump] done"
+              volumeMounts:
+                - { name: work, mountPath: /work }
+
+            # ---- Phase 7: load the sanitized dumps into the stg cluster ----
+            # Stg FIRST receives data here — already clean + already migrated.
+            - name: load-into-stg
+              image: {{ $pgImage }}
+              securityContext: {{- include "spree-store.refreshPgSecurity" . | nindent 16 }}
+              command: [/bin/bash, -c]
+              env:
+                {{- range $r.databases }}
+                - name: PW_{{ .owner | upper }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ .passwordSecret }}
+                      key: password
+                {{- end }}
+              args:
+                - |
+                  set -euo pipefail
+                  {{- range $r.databases }}
+                  echo "[load] resetting + restoring {{ .name }} on {{ $stgRw }}"
+                  export PGPASSWORD="${PW_{{ .owner | upper }}}"
+                  # Drop other connections, then recreate the owner's schema fresh.
+                  psql -h {{ $stgRw }} -U {{ .owner }} -d {{ .name }} -v ON_ERROR_STOP=1 -c \
+                    "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid();" || true
+                  psql -h {{ $stgRw }} -U {{ .owner }} -d {{ .name }} -v ON_ERROR_STOP=1 -c \
+                    "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;"
+                  pg_restore --no-owner --no-acl --role={{ .owner }} \
+                    -h {{ $stgRw }} -U {{ .owner }} -d {{ .name }} /work/dumps/{{ .name }}.dump
+                  {{- end }}
+                  echo "[load] done — stg now holds the sanitized data"
+              volumeMounts:
+                - { name: work, mountPath: /work }
+
+          containers:
+            # ---- Phase 8: sync prod media → stg buckets (no PII) ----
+            - name: media-sync
+              image: {{ $r.awsCliImage }}
+              securityContext: {{- include "spree-store.refreshPgSecurity" . | nindent 16 }}
+              env:
+                - name: AWS_REGION
+                  value: {{ $r.awsRegion }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_SECRET_ACCESS_KEY
+              command: [/bin/sh, -c]
+              args:
+                - |
+                  set -e
+                  {{- range $r.mediaSync }}
+                  echo "[media-sync] s3://{{ .from }} -> s3://{{ .to }}"
+                  aws s3 sync "s3://{{ .from }}" "s3://{{ .to }}" --delete
+                  {{- end }}
+                  echo "[media-sync] done"
+              resources: {{- toYaml $r.resources | nindent 16 }}
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+{{- end }}
