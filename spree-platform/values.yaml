@@ -220,27 +220,20 @@ externalSecrets:
   storeKind: ClusterSecretStore
   refreshInterval: 1h
 
-  ## ASM keys — base overlay supplies env-neutral keys (e.g. shared rails
-  ## master key); env overlays supply env-scoped keys (S3 creds per env).
+  ## ASM keys.
   asmKeys:
-    spreeRails: ""
+    # ONE consolidated tenant bundle — N27a/<namespace>. ESO extracts it and
+    # splits it into every app Secret (spree-rails, spree-db, cms-payload,
+    # cms-db, spree-smtp, revalidate, resend, webhook). Env-neutral: one AWS
+    # account per env post the Staging-account split, so the bundle carries flat
+    # unsuffixed keys. Set in the gitops base overlay. See
+    # infra/ASM-CONSOLIDATION-PLAN.md.
+    bundle: ""
+    # service_user/<acct>/* IAM-key secrets stay separate (env-scoped); the env
+    # overlay supplies these.
     spreeS3: ""
-    spreeSmtp: ""
-    cmsPayload: ""
     cmsS3: ""
     cnpgBackup: ""
-    # Shared storefront<->CMS on-publish revalidation token (single
-    # REVALIDATE_SECRET property). Materialised into the `<slug>-revalidate`
-    # Secret, consumed by both pods via extraEnvVarsSecret.
-    revalidate: ""
-    # Resend API key (single RESEND_API_KEY property) → `<slug>-resend` Secret;
-    # the storefront's transactional-email sender.
-    resend: ""
-    # Spree->storefront webhook signing secret (single SPREE_WEBHOOK_SECRET
-    # property) → `<slug>-webhook` Secret; shared by the Spree backend
-    # (WebhookEndpoint) and the storefront's HMAC verifier. Set PER-ENV in the
-    # overlay (one ASM secret per namespace: N27a/<slug>-<env>/webhook).
-    webhook: ""
 
 ## @section S3 buckets — env overlay supplies.
 ## Under `global` so they propagate to the rails-server / nextjs subcharts,
