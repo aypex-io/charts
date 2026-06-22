@@ -11,6 +11,7 @@ All charts inherit [`bitnami/common`](https://github.com/bitnami/charts/tree/mai
 | [`rails-server`](./rails-server) | Long-running Rails process. Covers web (puma) and worker (sidekiq / solid-queue) — same workload shape, different commands. One Deployment per release. |
 | [`rails-task`](./rails-task) | One-shot Rails task: `db:migrate`, `db:seed`, rake tasks, `rails runner`. One Kubernetes Job per release, with Helm hook semantics for ArgoCD-tracked migrations. |
 | [`nextjs`](./nextjs) | Next.js app. Used for storefronts, Payload CMS, admin panels. One Deployment per release. |
+| [`spree-platform`](./spree-platform) | Umbrella: Spree backend + Next.js storefront + Payload CMS on a shared CNPG cluster + Dragonfly (queue/cache/cable). Multi-tenant. See its [runbooks](./spree-platform/README.md#runbooks). |
 
 ## Design intent
 
