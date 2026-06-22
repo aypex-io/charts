@@ -47,6 +47,53 @@ common.names.fullname output: `<release>-<chartname>`.
 {{- end -}}
 
 {{/*
+Security context for the staging-refresh CNPG-operand phases (uid 26).
+*/}}
+{{- define "spree-store.refreshPgSecurity" -}}
+runAsNonRoot: true
+runAsUser: 26
+runAsGroup: 26
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: false
+capabilities:
+  drop: [ALL]
+seccompProfile:
+  type: RuntimeDefault
+{{- end -}}
+
+{{/*
+Security context for the staging-refresh Rails/Payload phases (uid 1000).
+readOnlyRootFilesystem is relaxed — the throwaway job runs migrate/seed which
+write Rails tmp; the pod is short-lived and holds no secrets on disk.
+*/}}
+{{- define "spree-store.refreshRailsSecurity" -}}
+runAsNonRoot: true
+runAsUser: 1000
+runAsGroup: 1000
+allowPrivilegeEscalation: false
+readOnlyRootFilesystem: false
+capabilities:
+  drop: [ALL]
+seccompProfile:
+  type: RuntimeDefault
+{{- end -}}
+
+{{/*
+Env for the staging-refresh Rails phases: DATABASE_URL pinned at the in-pod
+Postgres (local trust auth — no password) plus the overlay-supplied railsEnv
+(SMTP_FROM_ADDRESS for the prod boot-guard, REDIS_URL for the Sidekiq clear,
+STORE_URL / RAILS_HOST / TKF_ALLOW_SANITIZE / STAGING_SPREE_PUBLISHABLE_KEY for
+the sanitize task). Args: (dict "ctx" $ "db" "spree")
+*/}}
+{{- define "spree-store.refreshRailsEnv" -}}
+- name: DATABASE_URL
+  value: "postgresql://{{ .db }}@127.0.0.1:5432/{{ .db }}"
+{{- with .ctx.Values.jobs.stagingRefresh.railsEnv }}
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Common ExternalSecret skeleton: define once, reuse via fromYaml.
 Args: (dict "name" "..." "asmKey" "..." "data" (list "FIELD" ...) "context" $)
 */}}

@@ -260,6 +260,56 @@ jobs:
     enabled: true
     backoffLimit: 3
 
+  ## @section Nightly prod→staging data refresh (sanitize-before-load).
+  ## Renders a CronJob ONLY when enabled (stg overlay). Rebuilds stg's spree +
+  ## payload DBs from prod's barman backup via an in-pod throwaway Postgres, then
+  ## sanitizes (backend `tkf:staging:sanitize`) before loading into stg's tkf-db.
+  ## NEVER touches the prod database. See templates/cronjob-staging-refresh.yaml.
+  ## Needs k8s >= 1.28 (native sidecars) — verify on the target cluster.
+  stagingRefresh:
+    enabled: false
+    schedule: "0 3 * * *"          # 3h after prod's 00:00 backup settles
+    concurrencyPolicy: Forbid       # never overlap a destructive run
+    backoffLimit: 1                 # don't aggressively retry
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    ttlSecondsAfterFinished: 86400  # reap the pod (+ ephemeral PVC) after a day
+    # CNPG operand image (barman-cloud-* + pg_dump/restore + postgres). MUST match
+    # prod's PG major. Empty → defaults to .Values.cnpg.imageName at render.
+    pgImage: ""
+    awsCliImage: amazon/aws-cli:2.17.0
+    awsRegion: eu-west-2
+    # IAM-key Secret granting: read prod backup + prod buckets, write stg buckets.
+    awsSecret: ""                   # e.g. tkf-stg-refresh (env overlay)
+    # ASM source for awsSecret. When set (with enabled), the chart materialises
+    # awsSecret (AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY) from this ASM key via
+    # ESO — same pattern as asmKeys.spreeS3. e.g. service_user/prod/tkf-stg-refresh
+    asmKey: ""
+    # Ephemeral scratch holding $PGDATA + WAL + dumps (sized near prod data).
+    scratchVolume:
+      storageClass: ceph-block-r1
+      size: 60Gi
+    # Source: prod's existing barman backup in S3. serverName empty → cnpg.name.
+    backup:
+      bucket: ""                    # env overlay (prod backup bucket)
+      path: ""                      # env overlay (e.g. pg/tkf/prd)
+      serverName: ""
+    # Databases to restore/migrate/dump/load. owner == role to trust-connect as
+    # locally and the stg role to restore as; passwordSecret holds the stg role
+    # password (key `password`). Defaults match the tkf base cnpg.databases.
+    databases:
+      - { name: spree, owner: spree, passwordSecret: "" }
+      - { name: payload, owner: payload, passwordSecret: "" }
+    # prod→stg media bucket pairs for the aws s3 sync phase (no PII).
+    mediaSync: []
+    #  - { from: tkf-spree-storage-...-<prdAcct>, to: tkf-spree-storage-...-<stgAcct> }
+    # Extra env injected into the Rails migrate/sanitize phases (alongside the
+    # template-set DATABASE_URL). Supply SMTP_FROM_ADDRESS (prod boot-guard),
+    # REDIS_URL (Sidekiq clear target), STORE_URL, RAILS_HOST, TKF_ALLOW_SANITIZE,
+    # STAGING_SPREE_PUBLISHABLE_KEY here from the env overlay.
+    railsEnv: []
+    resources: {}
+
 ## @section Subchart defaults — generic Rails / Next defaults that work
 ## across tenants. Tenant base overlay supplies image registry + repository;
 ## env overlay supplies the tag and replica count.
