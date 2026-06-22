@@ -24,6 +24,7 @@ on N27a before enabling.
 {{- $stgRw := printf "%s-rw" .Values.cnpg.name -}}
 {{- $spreeDb := include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-db") -}}
 {{- $cmsDb := include "spree-store.resourceName" (dict "ctx" . "suffix" "cms-db") -}}
+{{- $cmsPayload := include "spree-store.resourceName" (dict "ctx" . "suffix" "cms-payload") -}}
 {{- $railsSecret := include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") -}}
 apiVersion: batch/v1
 kind: CronJob
@@ -95,23 +96,40 @@ spec:
               args:
                 - |
                   set -euo pipefail
+                  SRC="s3://{{ $r.backup.bucket }}/{{ $r.backup.path }}"
                   echo "[restore] fetching latest base backup for server '{{ $serverName }}'"
                   rm -rf "$PGDATA" && mkdir -p "$PGDATA"
-                  barman-cloud-restore \
-                    "s3://{{ $r.backup.bucket }}/{{ $r.backup.path }}" \
-                    "{{ $serverName }}" latest "$PGDATA"
+                  barman-cloud-restore "$SRC" "{{ $serverName }}" latest "$PGDATA"
+                  chmod 700 "$PGDATA"
                   # Replay WAL on start, then promote to a standalone primary.
                   touch "$PGDATA/recovery.signal"
-                  cat > "$PGDATA/override.recovery.conf" <<EOF
-                  restore_command = 'barman-cloud-wal-restore s3://{{ $r.backup.bucket }}/{{ $r.backup.path }} {{ $serverName }} %f %p'
+                  : > "$PGDATA/pg_ident.conf"
+                  cat > "$PGDATA/pg_hba.conf" <<HBA
+                  local all all trust
+                  host all all 127.0.0.1/32 trust
+                  host all all ::1/128 trust
+                  HBA
+                  # postgresql.auto.conf is read LAST, so these win over the restored
+                  # CNPG config. Neutralise every CNPG-ism that assumes the operator
+                  # is present: TLS certs + log dir + socket dir under /controller, WAL
+                  # archiving, and — critically — synchronous_standby_names (prod runs
+                  # sync replicas, so without this every write hangs forever on SyncRep
+                  # waiting for a standby that doesn't exist here).
+                  cat >> "$PGDATA/postgresql.auto.conf" <<CONF
+                  restore_command = 'barman-cloud-wal-restore $SRC {{ $serverName }} %f %p'
                   recovery_target_action = 'promote'
-                  EOF
-                  cat "$PGDATA/override.recovery.conf" >> "$PGDATA/postgresql.conf"
-                  # Local-only trust auth — no prod creds needed downstream.
-                  echo "local all all trust"            >  "$PGDATA/pg_hba.conf"
-                  echo "host  all all 127.0.0.1/32 trust" >> "$PGDATA/pg_hba.conf"
-                  echo "host  all all ::1/128     trust" >> "$PGDATA/pg_hba.conf"
-                  echo "listen_addresses = '127.0.0.1'"  >> "$PGDATA/postgresql.conf"
+                  ssl = off
+                  archive_mode = off
+                  logging_collector = off
+                  log_destination = 'stderr'
+                  listen_addresses = '127.0.0.1'
+                  unix_socket_directories = '/tmp'
+                  hba_file = '$PGDATA/pg_hba.conf'
+                  ident_file = '$PGDATA/pg_ident.conf'
+                  synchronous_standby_names = ''
+                  synchronous_commit = 'local'
+                  primary_conninfo = ''
+                  CONF
                   echo "[restore] done"
               volumeMounts:
                 - { name: work, mountPath: /work }
@@ -124,6 +142,20 @@ spec:
               env:
                 - name: PGDATA
                   value: /work/pgdata
+                # restore_command (WAL replay) runs INSIDE this container, so it
+                # needs the S3 read creds too — not just the restore initContainer.
+                - name: AWS_REGION
+                  value: {{ $r.awsRegion }}
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_ACCESS_KEY_ID
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $r.awsSecret }}
+                      key: AWS_SECRET_ACCESS_KEY
               command: [/bin/bash, -c]
               args:
                 - |
@@ -146,6 +178,9 @@ spec:
               args:
                 - |
                   set -e
+                  # mini_magick (loaded at boot) rejects a world-writable TMPDIR and
+                  # / is non-writable, so point TMPDIR at a private 0700 subdir.
+                  mkdir -p /tmp/rails && chmod 700 /tmp/rails && export TMPDIR=/tmp/rails
                   echo "[migrate-spree] db:migrate against local PG"
                   bundle exec rails db:migrate
               env: {{- include "spree-store.refreshRailsEnv" (dict "ctx" . "db" "spree") | nindent 16 }}
@@ -165,6 +200,11 @@ spec:
                   value: production
                 - name: DATABASE_URI
                   value: "postgresql://payload@127.0.0.1:5432/payload"
+              # PAYLOAD_SECRET (+ other payload env) — payload migrate refuses to
+              # boot without it, same as the cms-migrate Job.
+              envFrom:
+                - secretRef:
+                    name: {{ $cmsPayload }}
               volumeMounts:
                 - { name: tmp, mountPath: /tmp }
 
@@ -176,6 +216,7 @@ spec:
               args:
                 - |
                   set -e
+                  mkdir -p /tmp/rails && chmod 700 /tmp/rails && export TMPDIR=/tmp/rails
                   echo "[sanitize] tkf:staging:sanitize"
                   bundle exec rails tkf:staging:sanitize
                   echo "[sanitize] db:seed (idempotent Tkf::Seeds — store url + markets)"
