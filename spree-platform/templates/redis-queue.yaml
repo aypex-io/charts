@@ -55,15 +55,12 @@ spec:
             - --logtostderr
             - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
             - --version_check=false
-            # Dragonfly's official Sidekiq integration (v1.13+): distribute the
-            # Sidekiq queue list keys (queue:<name>) round-robin across proactor
-            # threads instead of hash-by-value, so several hot queues don't pin
-            # to one thread and bottleneck. No effect when proactor_threads=1.
-            # MUST be quoted — the trailing ':' otherwise parses as a YAML map
-            # ({"--shard_round_robin_prefix=queue": null}) instead of a string,
-            # and the API server rejects the Deployment ("cannot unmarshal
-            # object into ... args of type string").
-            - "--shard_round_robin_prefix=queue:"
+            # NOTE: --shard_round_robin_prefix=queue: (Dragonfly's old Sidekiq
+            # sharding hint) was removed in 0.9.2 — Dragonfly v1.39 logs
+            # "shard_round_robin_prefix is deprecated and will be removed in new
+            # versions". Queue keys fall back to default hash sharding across
+            # proactor threads, which is fine; keeping a deprecated flag risks a
+            # future image bump rejecting it.
             # Persistence: snapshot to the PVC at /data. dbfilename (fixed, no
             # {timestamp}) → a single overwriting dump that Dragonfly loads on
             # startup and rewrites on graceful shutdown. snapshot_cron is the
