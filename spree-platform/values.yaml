@@ -396,10 +396,30 @@ worker:
   command: [bundle, exec, sidekiq]
   service:
     enabled: false
+  # Sidekiq serves no HTTP, so the default /up probes are off. Liveness is a
+  # file-freshness check instead: the backend touches /tmp/sidekiq_alive on every
+  # Sidekiq heartbeat (~10s); if the process wedges (heartbeat thread stalls) the
+  # file goes stale and k8s restarts the pod. Needs a backend image carrying the
+  # sidekiq.rb marker hooks (tongkat-fitness#136) — older images never create the
+  # file, so the probe would crashloop; ship that image to the env FIRST.
+  # No readiness probe — the worker has no Service, so readiness gates nothing.
   livenessProbe:
     enabled: false
   readinessProbe:
     enabled: false
+  customLivenessProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        # Fail (exit 1) if the marker is missing or older than 45s (~4 missed
+        # 10s heartbeats). stat -c %Y = mtime epoch; date +%s = now.
+        - 'test "$(( $(date +%s) - $(stat -c %Y /tmp/sidekiq_alive 2>/dev/null || echo 0) ))" -lt 45'
+    # Generous start delay — Rails + Spree boot before the first :startup touch.
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
   resourcesPreset: none
 
 migrate:
