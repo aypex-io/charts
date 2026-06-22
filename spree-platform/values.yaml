@@ -121,7 +121,10 @@ dragonfly:
     # under docker.io which resolved to a non-existent docker.io image.
     registry: docker.dragonflydb.io
     repository: dragonflydb/dragonfly
-    tag: latest
+    # Pinned for reproducibility — `latest` lets a pod reschedule silently pull a
+    # new Dragonfly major. v1.39.0 is the build prd has been running (and clears
+    # the v1.13+ floor for --shard_round_robin_prefix). Bump deliberately.
+    tag: v1.39.0
 
 ## @section Redis queue Dragonfly (Sidekiq job queues)
 ## Persistent store for Sidekiq queues (REDIS_URL=…/0 on web + worker). Runs
@@ -131,8 +134,17 @@ dragonfly:
 ## (Renamed from `dragonfly` in 0.5.0; resource name `{release}-redis-queue`.)
 redisQueue:
   enabled: true
+  # Single master only — see redis-queue.yaml. replicaCount is retained for
+  # back-compat but IGNORED by the template (the RWO PVC enforces one pod).
   replicaCount: 1
   proactorThreads: 2
+  # Snapshot persistence so a pod restart doesn't drop queued/scheduled/retry
+  # jobs. Tiny store → a small PVC; snapshots are MB. ceph-block-r1 matches the
+  # CNPG/Meilisearch pattern. snapshotCron bounds loss on ungraceful death.
+  persistence:
+    size: 2Gi
+    storageClass: ceph-block-r1
+    snapshotCron: "*/5 * * * *"
   resources:
     requests:
       cpu: 100m
