@@ -1,0 +1,74 @@
+{{- if .Values.redisCable.enabled }}
+{{- /*
+Dedicated Dragonfly for ActionCable pub/sub (CABLE_REDIS_URL, db 0). Pub/sub is
+transient (no stored keys), so it's tiny, eviction-free and unpersisted. Memory
+LIMIT must clear 256Mi × proactorThreads (Dragonfly refuses to boot otherwise).
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis-cable
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-cable
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis-cable
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+        prometheus.io/path: /metrics
+      labels: {{- include "revue.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis-cable
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dragonfly
+          image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
+          args:
+            - --logtostderr
+            - --proactor_threads={{ .Values.redisCable.proactorThreads }}
+            - --version_check=false
+          ports:
+            - containerPort: 6379
+              name: dragonfly
+          readinessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.redisCable.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-cable
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: redis-cable
+  ports:
+    - name: dragonfly
+      port: 6379
+      targetPort: dragonfly
+{{- end }}

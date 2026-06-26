@@ -1,0 +1,76 @@
+{{- if .Values.redisCache.enabled }}
+{{- /*
+Eviction-tolerant Dragonfly shared by Rails.cache + rack-attack (REDIS_CACHE_URL,
+db 1). --cache_mode + --maxmemory → evicts LRU under pressure instead of OOMing.
+Ephemeral (cold start repopulates), so no persistence and a plain Deployment.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis-cache
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis-cache
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+        prometheus.io/path: /metrics
+      labels: {{- include "revue.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis-cache
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dragonfly
+          image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
+          args:
+            - --logtostderr
+            - --proactor_threads={{ .Values.redisCache.proactorThreads }}
+            - --version_check=false
+            - --cache_mode=true
+            - --maxmemory={{ .Values.redisCache.maxmemory }}
+          ports:
+            - containerPort: 6379
+              name: dragonfly
+          readinessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.redisCache.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-cache
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: redis-cache
+  ports:
+    - name: dragonfly
+      port: 6379
+      targetPort: dragonfly
+{{- end }}

@@ -1,0 +1,55 @@
+# Exercises every umbrella template for `helm template` / lint in CI.
+env: stg
+name: revue
+
+hostnames:
+  admin: admin.stg.revue.aypex.io
+  api: api.stg.revue.aypex.io
+
+gateway:
+  name: main
+  namespace: gateway
+  sectionNames:
+    reviews: [revue-stg-https]
+    admin: []
+    api: []
+
+cnpg:
+  objectStore:
+    enabled: false
+
+externalSecrets:
+  asmKeys:
+    bundle: N27a/revue
+    s3: service_user/411653576501/revue-stg
+
+global:
+  s3:
+    mediaBucket: revue-media-stg-eu-west-2-411653576501
+
+images:
+  backend: "0.0.1"
+
+web:
+  image:
+    registry: 517036156200.dkr.ecr.us-east-1.amazonaws.com
+    repository: revue-backend
+    tag: "0.0.1"
+
+worker:
+  image:
+    registry: 517036156200.dkr.ecr.us-east-1.amazonaws.com
+    repository: revue-backend
+    tag: "0.0.1"
+
+migrate:
+  image:
+    registry: 517036156200.dkr.ecr.us-east-1.amazonaws.com
+    repository: revue-backend
+    tag: "0.0.1"
+
+seed:
+  image:
+    registry: 517036156200.dkr.ecr.us-east-1.amazonaws.com
+    repository: revue-backend
+    tag: "0.0.1"

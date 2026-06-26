@@ -1,0 +1,102 @@
+{{- if .Values.redisQueue.enabled }}
+{{- /*
+Persistent Dragonfly for Sidekiq queues (REDIS_URL, db 0). No eviction — losing
+a queued/in-flight job is data loss. Single master: the RWO PVC enforces one pod
+and strategy Recreate releases the volume before the replacement mounts.
+Snapshots make the queue survive restarts; the cron bounds loss on hard kill.
+*/}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis-queue
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-queue
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: redis-queue
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "6379"
+        prometheus.io/path: /metrics
+      labels: {{- include "revue.labels" . | nindent 8 }}
+        app.kubernetes.io/component: redis-queue
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dragonfly
+          image: {{ .Values.dragonfly.image.registry }}/{{ .Values.dragonfly.image.repository }}:{{ .Values.dragonfly.image.tag }}
+          args:
+            - --logtostderr
+            - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
+            - --version_check=false
+            - --dir=/data
+            - --dbfilename=dump
+            - {{ printf "--snapshot_cron=%s" .Values.redisQueue.persistence.snapshotCron | quote }}
+          ports:
+            - containerPort: 6379
+              name: dragonfly
+          readinessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: dragonfly
+            initialDelaySeconds: 15
+          resources: {{- toYaml .Values.redisQueue.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-redis-queue
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-redis-queue
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-queue
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.redisQueue.persistence.storageClass }}
+  resources:
+    requests:
+      storage: {{ .Values.redisQueue.persistence.size }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis-queue
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: redis-queue
+  ports:
+    - name: dragonfly
+      port: 6379
+      targetPort: dragonfly
+{{- end }}
