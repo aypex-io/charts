@@ -10,10 +10,10 @@ clusterDomain: cluster.local
 ## @section Hostnames + gateway wiring
 ## The Rails app serves BOTH the admin UI (admin host) and the public widget +
 ## integration API (api host). The widget JS bundle itself is served from
-## cdn.reviews.aypex.io (S3 + Cloudflare), NOT through this cluster.
+## cdn.revue.aypex.io (S3 + Cloudflare), NOT through this cluster.
 hostnames:
-  admin: ""              # admin.reviews.aypex.io
-  api: ""                # api.reviews.aypex.io
+  admin: ""              # admin.revue.aypex.io
+  api: ""                # api.revue.aypex.io
 
 gateway:
   name: main

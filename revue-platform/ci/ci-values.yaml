@@ -3,14 +3,14 @@ env: stg
 name: revue
 
 hostnames:
-  admin: admin.stg.reviews.aypex.io
-  api: api.stg.reviews.aypex.io
+  admin: admin.stg.revue.aypex.io
+  api: api.stg.revue.aypex.io
 
 gateway:
   name: main
   namespace: gateway
   sectionNames:
-    reviews: [reviews-stg-https]
+    reviews: [revue-stg-https]
     admin: []
     api: []
 
