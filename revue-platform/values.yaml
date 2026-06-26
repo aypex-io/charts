@@ -1,0 +1,212 @@
+## revue-platform umbrella — product-neutral defaults.
+## Env overlays live in gitops-aypex products/revue/{base,stg,prd}/values.yaml.
+
+## @section Top-level
+env: ""                  # "stg" | "prd" — env overlay
+namespace: ""            # auto: "revue-{env}" — see _helpers.tpl
+name: revue              # resource-name prefix (this is a single product)
+clusterDomain: cluster.local
+
+## @section Hostnames + gateway wiring
+## The Rails app serves BOTH the admin UI (admin host) and the public widget +
+## integration API (api host). The widget JS bundle itself is served from
+## cdn.reviews.aypex.io (S3 + Cloudflare), NOT through this cluster.
+hostnames:
+  admin: ""              # admin.reviews.aypex.io
+  api: ""                # api.reviews.aypex.io
+
+gateway:
+  name: main
+  namespace: gateway
+  sectionNames:
+    reviews: []          # fallback listener for both routes
+    admin: []            # per-route listener (falls back to .reviews)
+    api: []              # per-route listener (falls back to .reviews)
+
+## @section CNPG cluster
+## Single database `revue`, owner role `revue` (DDL / migrations), plus a
+## NON-OWNER managed role `revue_app` that the web/worker pods connect as so
+## Postgres RLS engages as the multi-tenant backstop. The pooler is DISABLED:
+## the app sets the per-request `revue.account_id` GUC at session level, which
+## a transaction-pooling PgBouncer would not preserve.
+cnpg:
+  name: revue-db
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:18
+  storageSize: 20Gi
+  walStorageSize: 5Gi
+  storageClass: ceph-block-r1
+  walStorageClass: ""
+  maxSyncReplicas: 0
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  parameters: {}
+  affinity: {}
+  scheduledBackup:
+    enabled: false
+    schedule: "0 0 * * * *"
+    immediate: false
+  objectStore:
+    enabled: false
+    bucket: ""
+    path: ""
+    retentionPolicy: "30d"
+    walCompression: gzip
+  # The owner role (migrations) is the bootstrap db owner; the runtime role is
+  # an extra managed login. Both passwords come from the ASM bundle via ESO.
+  database: revue
+  owner: revue
+  ownerPasswordSecret: revue-db
+  appRole: revue_app
+  appRolePasswordSecret: revue-app-db
+
+## @section Dragonfly engine image (shared by all redis-* instances)
+dragonfly:
+  image:
+    registry: docker.dragonflydb.io
+    repository: dragonflydb/dragonfly
+    tag: v1.39.0
+
+## @section Redis queue Dragonfly (Sidekiq job queues; REDIS_URL=…/0, persistent, no eviction)
+redisQueue:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
+  persistence:
+    size: 2Gi
+    storageClass: ceph-block-r1
+    snapshotCron: "*/5 * * * *"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
+## @section Redis cable Dragonfly (ActionCable pub/sub; CABLE_REDIS_URL=…/0)
+redisCable:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+
+## @section Redis cache Dragonfly (Rails.cache + rack-attack; REDIS_CACHE_URL=…/1, LRU eviction)
+redisCache:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
+  maxmemory: 576mb
+  resources:
+    requests:
+      cpu: 100m
+      memory: 384Mi
+    limits:
+      memory: 768Mi
+
+## @section ExternalSecrets — ONE consolidated bundle N27a/revue (ESO splits it)
+externalSecrets:
+  storeName: cluster-secret-store
+  storeKind: ClusterSecretStore
+  refreshInterval: 1h
+  asmKeys:
+    bundle: ""           # N27a/revue (base overlay)
+    s3: ""               # service_user/<acct>/revue-<env> (env overlay) — IAM keys
+    cnpgBackup: ""       # service_user/<acct>/cnpg (prd overlay)
+
+## @section S3 — review media bucket (env overlay supplies). Under `global` so
+## it reaches the rails-server subchart's extraEnvVars (AWS_BUCKET).
+global:
+  s3:
+    mediaBucket: ""
+
+## @section Image tag (env overlay supplies; kept in lockstep with web/worker).
+images:
+  backend: ""
+
+## @section Subchart defaults
+_railsSecurity: &railsSecurity
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: Always
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+web:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3000
+  resourcesPreset: none
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  terminationGracePeriodSeconds: 40
+  lifecycleHooks:
+    preStop:
+      exec:
+        command: ["sh", "-c", "sleep 10"]
+
+worker:
+  <<: *railsSecurity
+  command: [bundle, exec, sidekiq, "-C", "config/sidekiq.yml"]
+  service:
+    enabled: false
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+  customLivenessProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        - 'test "$(( $(date +%s) - $(stat -c %Y /tmp/sidekiq_alive 2>/dev/null || echo 0) ))" -lt 45'
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  resourcesPreset: none
+
+migrate:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, db:prepare]
+  hook: post-install,post-upgrade
+  hookWeight: "-5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 3
+  resourcesPreset: none
+
+seed:
+  <<: *railsSecurity
+  command: [bundle, exec, rails, db:seed]
+  hook: post-install,post-upgrade
+  hookWeight: "0"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 1
+  resourcesPreset: none

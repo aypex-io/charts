@@ -1,0 +1,14 @@
+apiVersion: gateway.networking.k8s.io/v1beta1
+kind: ReferenceGrant
+metadata:
+  name: {{ .Release.Name }}-gateway-to-services
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  from:
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: {{ .Values.gateway.namespace }}
+  to:
+    - group: ""
+      kind: Service
