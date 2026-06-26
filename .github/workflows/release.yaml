@@ -7,6 +7,7 @@ on:
       - "rails-task-v*"
       - "nextjs-v*"
       - "spree-platform-v*"
+      - "revue-platform-v*"
 
 permissions:
   contents: read
