@@ -2,7 +2,7 @@ apiVersion: v2
 name: revue-platform
 description: Revue headless reviews platform umbrella — Rails 8 API + Hotwire admin (web) + Sidekiq (worker) on a single CNPG cluster + dedicated Dragonfly instances (redis-queue / redis-cache / redis-cable). Single product (not per-customer fan-out); stg + prd envs, consumed by gitops products/revue overlays.
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.0.0"
 dependencies:
   - name: common
