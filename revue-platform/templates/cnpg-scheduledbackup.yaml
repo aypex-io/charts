@@ -1,0 +1,22 @@
+{{- if .Values.cnpg.scheduledBackup.enabled }}
+{{- /*
+Periodic base backups via the barman-cloud plugin (method: plugin). WAL is
+archived continuously by the Cluster's isWALArchiver plugin; this adds the
+scheduled base backups. Mirrors the spree-platform pattern.
+*/}}
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: {{ .Values.cnpg.name }}-backup
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.cnpg.scheduledBackup.schedule | quote }}
+  immediate: {{ .Values.cnpg.scheduledBackup.immediate }}
+  backupOwnerReference: self
+  cluster:
+    name: {{ .Values.cnpg.name }}
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+{{- end }}

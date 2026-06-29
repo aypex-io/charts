@@ -58,6 +58,7 @@ cnpg:
     bucket: ""
     path: ""
     retentionPolicy: "30d"
+    retentionPolicyIntervalSeconds: 1800
     walCompression: gzip
   # The owner role (migrations) is the bootstrap db owner; the runtime role is
   # an extra managed login. Both passwords come from the ASM bundle via ESO.
