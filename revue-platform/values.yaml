@@ -67,40 +67,15 @@ cnpg:
   appRole: revue_app
   appRolePasswordSecret: revue-app-db
 
-## @section Dragonfly engine image (shared by all redis-* instances)
+## @section Dragonfly engine image (shared by the redis-cache instance)
+## NB: pgbus moved BOTH background jobs and realtime streams onto Postgres/PGMQ,
+## so the persistent queue (redisQueue) and ActionCable pub/sub (redisCable)
+## Dragonfly instances are gone. Only the cache instance remains.
 dragonfly:
   image:
     registry: docker.dragonflydb.io
     repository: dragonflydb/dragonfly
     tag: v1.39.0
-
-## @section Redis queue Dragonfly (Sidekiq job queues; REDIS_URL=…/0, persistent, no eviction)
-redisQueue:
-  enabled: true
-  replicaCount: 1
-  proactorThreads: 2
-  persistence:
-    size: 2Gi
-    storageClass: ceph-block-r1
-    snapshotCron: "*/5 * * * *"
-  resources:
-    requests:
-      cpu: 100m
-      memory: 512Mi
-    limits:
-      memory: 1Gi
-
-## @section Redis cable Dragonfly (ActionCable pub/sub; CABLE_REDIS_URL=…/0)
-redisCable:
-  enabled: true
-  replicaCount: 1
-  proactorThreads: 1
-  resources:
-    requests:
-      cpu: 50m
-      memory: 128Mi
-    limits:
-      memory: 512Mi
 
 ## @section Redis cache Dragonfly (Rails.cache + rack-attack; REDIS_CACHE_URL=…/1, LRU eviction)
 redisCache:
@@ -177,28 +152,30 @@ web:
 
 worker:
   <<: *railsSecurity
-  command: [bundle, exec, sidekiq, "-C", "config/sidekiq.yml"]
+  # pgbus supervisor — workers + dispatcher + recurring scheduler, all on
+  # Postgres/PGMQ (no Sidekiq, no Redis).
+  command: [bundle, exec, pgbus, start]
   service:
     enabled: false
+  # No external liveness/readiness probe. The pgbus supervisor reaps stalled
+  # workers and recycles them itself (max_jobs_per_worker / max_memory_mb), and a
+  # crashed supervisor process exits → k8s restarts the pod regardless. (The old
+  # Sidekiq probe relied on a per-beat /tmp/sidekiq_alive touch pgbus doesn't
+  # emit; a heartbeat-freshness exec probe over pgbus_processes could be added if
+  # a wedged-but-running supervisor — distinct from a wedged worker — ever proves
+  # a real risk.)
   livenessProbe:
     enabled: false
   readinessProbe:
     enabled: false
-  customLivenessProbe:
-    exec:
-      command:
-        - sh
-        - -c
-        - 'test "$(( $(date +%s) - $(stat -c %Y /tmp/sidekiq_alive 2>/dev/null || echo 0) ))" -lt 45'
-    initialDelaySeconds: 60
-    periodSeconds: 15
-    timeoutSeconds: 5
-    failureThreshold: 3
   resourcesPreset: none
 
 migrate:
   <<: *railsSecurity
-  command: [bundle, exec, rails, db:prepare]
+  # db:prepare (schema) → db:install_pgmq (vendored PGMQ schema; schema.rb can't
+  # carry it) → db:enforce_tenancy (RLS, resolver fns, runtime-role + pgmq
+  # grants). Shell form so the three run in order, all as the owner role.
+  command: [sh, -c, "bundle exec rails db:prepare && bundle exec rails db:install_pgmq && bundle exec rails db:enforce_tenancy"]
   hook: post-install,post-upgrade
   hookWeight: "-5"
   hookDeletePolicy: before-hook-creation
