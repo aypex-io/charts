@@ -1,0 +1,31 @@
+{{- if .Values.cnpg.objectStore.enabled }}
+{{- /*
+The barman-cloud plugin's backup target. The Cluster (cnpg-cluster.yaml) only
+references this by name (plugins[].parameters.barmanObjectName: aws-s3); without
+this ObjectStore CR the plugin's pre-reconcile hook stops the operator before it
+ever provisions Postgres ("barman object configuration not found, requeuing").
+Mirrors the spree-platform pattern. Creds come from the cnpg-backup Secret (ESO,
+from asmKeys.cnpgBackup).
+*/}}
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: aws-s3
+  namespace: {{ include "revue.namespace" . }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  configuration:
+    destinationPath: s3://{{ .Values.cnpg.objectStore.bucket }}/{{ .Values.cnpg.objectStore.path }}
+    s3Credentials:
+      accessKeyId:
+        name: {{ include "revue.resourceName" (dict "ctx" . "suffix" "cnpg-backup") }}
+        key: AWS_ACCESS_KEY_ID
+      secretAccessKey:
+        name: {{ include "revue.resourceName" (dict "ctx" . "suffix" "cnpg-backup") }}
+        key: AWS_SECRET_ACCESS_KEY
+    wal:
+      compression: {{ .Values.cnpg.objectStore.walCompression }}
+  retentionPolicy: {{ .Values.cnpg.objectStore.retentionPolicy | quote }}
+  instanceSidecarConfiguration:
+    retentionPolicyIntervalSeconds: {{ .Values.cnpg.objectStore.retentionPolicyIntervalSeconds }}
+{{- end }}
