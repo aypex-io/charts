@@ -154,8 +154,13 @@ web:
 worker:
   <<: *railsSecurity
   # pgbus supervisor — workers + dispatcher + recurring scheduler, all on
-  # Postgres/PGMQ (no Sidekiq, no Redis).
-  command: [bundle, exec, pgbus, start]
+  # Postgres/PGMQ (no Sidekiq, no Redis). MUST be the bin/pgbus BINSTUB, not
+  # `bundle exec pgbus`: the gem's exe/pgbus boots only `require "pgbus"` (no
+  # config/environment), so the app's config never loads — the supervisor runs
+  # pgbus defaults (no DATABASE_URL/connects_to, single `default` queue) and
+  # crash-loops on ActiveRecord::ConnectionNotDefined. The binstub requires
+  # config/environment, so application.rb + pgbus.yml + the engine all load.
+  command: [bin/pgbus, start]
   service:
     enabled: false
   # No external liveness/readiness probe. The pgbus supervisor reaps stalled
