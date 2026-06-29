@@ -12,16 +12,19 @@ clusterDomain: cluster.local
 ## integration API (api host). The widget JS bundle itself is served from
 ## cdn.revue.aypex.io (S3 + Cloudflare), NOT through this cluster.
 hostnames:
-  admin: ""              # admin.revue.aypex.io
-  api: ""                # api.revue.aypex.io
+  admin: ""              # admin.revue.fyi
+  api: ""                # api.revue.fyi
+  public: ""             # wildcard for per-store public sites, e.g. "*.revue.fyi".
+                         # PRD only (stg can't co-own *.revue.fyi). Empty = no route.
 
 gateway:
   name: main
   namespace: gateway
   sectionNames:
-    reviews: []          # fallback listener for both routes
+    reviews: []          # fallback listener for all routes
     admin: []            # per-route listener (falls back to .reviews)
     api: []              # per-route listener (falls back to .reviews)
+    public: []           # per-route listener (falls back to .reviews)
 
 ## @section CNPG cluster
 ## Single database `revue`, owner role `revue` (DDL / migrations), plus a
