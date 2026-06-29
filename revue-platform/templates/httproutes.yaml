@@ -40,3 +40,29 @@ spec:
         - name: {{ $release }}-web
           namespace: {{ $ns }}
           port: 80
+{{- if .Values.hostnames.public }}
+---
+# Per-store public reviews sites (<store-handle>.revue.fyi). Wildcard host; Gateway
+# API matches the most-specific host first, so the admin/api routes above still win
+# their exact hosts and everything else lands on the same web backend (the app
+# resolves the store from the host). PRD only — stg can't co-own *.revue.fyi.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-public
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "revue.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.public | default .Values.gateway.sectionNames.reviews) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.public | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $release }}-web
+          namespace: {{ $ns }}
+          port: 80
+{{- end }}
