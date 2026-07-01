@@ -151,13 +151,16 @@ web:
   # OpenTelemetry traces -> OTLP. Setting OTEL_EXPORTER_OTLP_ENDPOINT is what
   # ACTIVATES tracing (the app's initializer is dormant until then); it targets
   # the Alloy OTLP receiver in the obs stack. OTEL_SERVICE_NAME identifies the
-  # web workload. Per-env resource attrs (deployment.environment, k8s.pod.name)
-  # are appended via OTEL_RESOURCE_ATTRIBUTES in the gitops products/revue overlay.
-  extraEnvVars:
-    - name: OTEL_SERVICE_NAME
-      value: revue-web
-    - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: http://alloy.obs.svc.cluster.local:4318
+  # web workload. These go through configmap.data (envFrom), NOT extraEnvVars: the
+  # gitops overlay sets its own web.extraEnvVars list, and Helm REPLACES lists
+  # across value layers (it only deep-merges maps) — so extraEnvVars here would be
+  # dropped. configmap.data merges, and it's where the overlay appends per-env
+  # OTEL_RESOURCE_ATTRIBUTES (deployment.environment=stg|prd) too.
+  configmap:
+    create: true
+    data:
+      OTEL_SERVICE_NAME: revue-web
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.obs.svc.cluster.local:4318
   resourcesPreset: none
   updateStrategy:
     type: RollingUpdate
@@ -193,13 +196,14 @@ worker:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9394"
     prometheus.io/path: /metrics
-  # OpenTelemetry traces -> OTLP (see web block). Distinct service name so web
-  # and worker spans are separable in Tempo.
-  extraEnvVars:
-    - name: OTEL_SERVICE_NAME
-      value: revue-worker
-    - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: http://alloy.obs.svc.cluster.local:4318
+  # OpenTelemetry traces -> OTLP (see web block for why configmap.data, not
+  # extraEnvVars). Distinct service name so web and worker spans are separable
+  # in Tempo.
+  configmap:
+    create: true
+    data:
+      OTEL_SERVICE_NAME: revue-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.obs.svc.cluster.local:4318
   # No external liveness/readiness probe. The pgbus supervisor reaps stalled
   # workers and recycles them itself (max_jobs_per_worker / max_memory_mb), and a
   # crashed supervisor process exits → k8s restarts the pod regardless. (The old
