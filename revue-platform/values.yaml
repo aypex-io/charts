@@ -139,6 +139,28 @@ web:
       http: 80
   containerPorts:
     http: 3000
+  # Puma serves Prometheus metrics (yabeda) on GET /metrics on the app port, so
+  # obs/Alloy scrapes the containerPort (3000), not the Service port (80). No
+  # extra port needed. Convention is prometheus.io pod annotations — Alloy
+  # discovers them (no PodMonitor/ServiceMonitor CRD on this cluster; matches
+  # cnpg-cluster.yaml / redis-cache.yaml here).
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "3000"
+    prometheus.io/path: /metrics
+  # OpenTelemetry traces -> OTLP. Setting OTEL_EXPORTER_OTLP_ENDPOINT is what
+  # ACTIVATES tracing (the app's initializer is dormant until then); it targets
+  # the Alloy OTLP receiver in the obs stack. OTEL_SERVICE_NAME identifies the
+  # web workload. These go through configmap.data (envFrom), NOT extraEnvVars: the
+  # gitops overlay sets its own web.extraEnvVars list, and Helm REPLACES lists
+  # across value layers (it only deep-merges maps) — so extraEnvVars here would be
+  # dropped. configmap.data merges, and it's where the overlay appends per-env
+  # OTEL_RESOURCE_ATTRIBUTES (deployment.environment=stg|prd) too.
+  configmap:
+    create: true
+    data:
+      OTEL_SERVICE_NAME: revue-web
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.obs.svc.cluster.local:4318
   resourcesPreset: none
   updateStrategy:
     type: RollingUpdate
@@ -163,6 +185,25 @@ worker:
   command: [bin/pgbus, start]
   service:
     enabled: false
+  # The worker has no Rack/Puma server, so Observability::WorkerMetricsApp serves
+  # Prometheus metrics (yabeda job counters + pgbus queue-health) on a dedicated
+  # port. Declare it as a containerPort so annotation scraping targets a real
+  # port (Alloy drops annotation targets whose port isn't a declared
+  # containerPort) and so it stays reachable if networkPolicy is enabled.
+  containerPorts:
+    metrics: 9394
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9394"
+    prometheus.io/path: /metrics
+  # OpenTelemetry traces -> OTLP (see web block for why configmap.data, not
+  # extraEnvVars). Distinct service name so web and worker spans are separable
+  # in Tempo.
+  configmap:
+    create: true
+    data:
+      OTEL_SERVICE_NAME: revue-worker
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://alloy.obs.svc.cluster.local:4318
   # No external liveness/readiness probe. The pgbus supervisor reaps stalled
   # workers and recycles them itself (max_jobs_per_worker / max_memory_mb), and a
   # crashed supervisor process exits → k8s restarts the pod regardless. (The old
