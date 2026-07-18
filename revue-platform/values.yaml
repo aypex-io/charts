@@ -187,15 +187,27 @@ worker:
     enabled: false
   # The worker has no Rack/Puma server, so Observability::WorkerMetricsApp serves
   # Prometheus metrics (yabeda job counters + pgbus queue-health) on a dedicated
-  # port. Declare it as a containerPort so annotation scraping targets a real
-  # port (Alloy drops annotation targets whose port isn't a declared
-  # containerPort) and so it stays reachable if networkPolicy is enabled.
+  # port. Declared as a containerPort so the named `metrics` port exists for the
+  # startupProbe below and stays reachable if networkPolicy is enabled (Alloy
+  # scrapes whatever the annotation says regardless).
   containerPorts:
     metrics: 9394
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "9394"
     prometheus.io/path: /metrics
+  # The metrics server runs on a background thread inside the pgbus supervisor,
+  # so its death doesn't crash the process — without a probe a dead exporter is
+  # only visible as `up == 0` on the scrape. Fail the pod over instead. Startup
+  # only: once serving, the thread has no known mid-run failure mode, and the
+  # no-liveness rationale below still stands for the supervisor itself.
+  customStartupProbe:
+    httpGet:
+      path: /metrics
+      port: metrics
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 30
   # OpenTelemetry traces -> OTLP (see web block for why configmap.data, not
   # extraEnvVars). Distinct service name so web and worker spans are separable
   # in Tempo.
