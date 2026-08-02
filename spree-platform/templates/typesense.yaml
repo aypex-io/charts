@@ -209,9 +209,20 @@ spec:
         - name: tmp
           emptyDir: {}
   volumeClaimTemplates:
+    # STABLE labels only — NOT spree-store.labels. That helper includes
+    # `helm.sh/chart: <name>-<version>`, and volumeClaimTemplates is an
+    # IMMUTABLE field of a StatefulSet. Using it here meant every chart version
+    # bump changed the template and Kubernetes rejected the patch with:
+    #   Forbidden: updates to statefulset spec for fields other than
+    #   'replicas', 'ordinals', 'template', ... are forbidden
+    # which wedged the 1.0.0 -> 1.1.0 sync. Nothing version-bearing may appear
+    # here, or the next bump breaks the same way and needs a manual recreate.
     - metadata:
         name: data
-        labels: {{- include "spree-store.labels" . | nindent 10 }}
+        labels:
+          app.kubernetes.io/name: spree-store
+          app.kubernetes.io/instance: {{ .Release.Name }}
+          app.kubernetes.io/part-of: spree-store
           app.kubernetes.io/component: typesense
       spec:
         accessModes:
