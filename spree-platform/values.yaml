@@ -136,6 +136,13 @@ dragonfly:
 ## (Renamed from `dragonfly` in 0.5.0; resource name `{release}-redis-queue`.)
 redisQueue:
   enabled: true
+  # >1 is the whole reason to use the operator: it gives each replica its own
+  # PVC and handles master election, so the old `replicas: 1` + `Recreate`
+  # workaround for a shared RWO volume is gone.
+  image:
+    registry: docker.dragonflydb.io
+    repository: dragonflydb/dragonfly
+    tag: v1.39.0
   # Single master only — see redis-queue.yaml. replicaCount is retained for
   # back-compat but IGNORED by the template (the RWO PVC enforces one pod).
   replicaCount: 1
@@ -145,7 +152,11 @@ redisQueue:
   # CNPG/Meilisearch pattern. snapshotCron bounds loss on ungraceful death.
   persistence:
     size: 2Gi
-    storageClass: ceph-block-r1
+    # size-3 pool. Was ceph-block-r1 (size 1, min_size 1) — the pool whose
+    # only-copy-on-the-draining-node behaviour wedged a Talos node for 90
+    # minutes on 2026-08-02. The operator recreates this PVC, so there is no
+    # migration cost to fixing it now.
+    storageClass: ceph-block
     snapshotCron: "*/5 * * * *"
   resources:
     requests:
@@ -165,6 +176,10 @@ redisQueue:
 ## A 256Mi limit crash-loops with "256.00MiB are required. Exiting".
 redisCable:
   enabled: true
+  image:
+    registry: docker.dragonflydb.io
+    repository: dragonflydb/dragonfly
+    tag: v1.39.0
   replicaCount: 1
   proactorThreads: 1
   resources:
@@ -186,6 +201,10 @@ redisCable:
 ## (Renamed from `storefrontCache` in 0.4.0 — now serves the backend too.)
 redisCache:
   enabled: true
+  image:
+    registry: docker.dragonflydb.io
+    repository: dragonflydb/dragonfly
+    tag: v1.39.0
   replicaCount: 1
   # Two proactor threads now that both the storefront and Rails share it.
   proactorThreads: 2
