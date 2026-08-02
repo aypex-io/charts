@@ -208,6 +208,32 @@ spec:
             name: {{ $stsName }}-nodes
         - name: tmp
           emptyDir: {}
+  {{- /*
+  Delete the PVCs when the StatefulSet is deleted.
+
+  Typesense's Raft persists cluster membership BY POD IP. If the PVCs outlive
+  the StatefulSet, every node reboots with membership listing the PREVIOUS
+  pods' IPs, so no node is in its own recorded membership, none can vote, and
+  Typesense refuses to recover:
+
+    node 10.244.3.82:8107 can't do pre_vote as it is not in
+      10.244.7.87, 10.244.3.184, 10.244.11.202
+    Multi-node with no leader: refusing to reset peers.
+
+  The pods sit Running and never Ready, with only that warning to go on. It
+  deadlocked the stg rollout on 2026-08-02 and needed the PVCs deleted by hand.
+
+  Retaining them buys nothing: the index is rebuilt by `rake spree:search:reindex`
+  (the chart's rake Job runs it on every deploy), so a wiped volume costs a
+  reindex, not data. whenScaled stays Retain so scaling in and back out does not
+  silently discard a replica's data mid-operation.
+
+  NOTE this field IS mutable, unlike volumeClaimTemplates itself — adding it
+  does not require another StatefulSet recreate.
+  */}}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Delete
+    whenScaled: Retain
   volumeClaimTemplates:
     # STABLE labels only — NOT spree-store.labels. That helper includes
     # `helm.sh/chart: <name>-<version>`, and volumeClaimTemplates is an
