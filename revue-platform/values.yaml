@@ -57,7 +57,8 @@ cnpg:
     enabled: false
     bucket: ""
     path: ""
-    retentionPolicy: "30d"
+    # 14d — trimmed from 30d in the 2026-08 S3 cost pass. Overridable per-env.
+    retentionPolicy: "14d"
     retentionPolicyIntervalSeconds: 1800
     walCompression: gzip
   # The owner role (migrations) is the bootstrap db owner; the runtime role is

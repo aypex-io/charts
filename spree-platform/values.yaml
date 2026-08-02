@@ -104,7 +104,9 @@ cnpg:
     enabled: false
     bucket: ""
     path: ""
-    retentionPolicy: "30d"
+    # 14d — trimmed from 30d in the 2026-08 S3 cost pass. This halves the PITR
+    # window for customer commerce DBs; override per-env if a tenant needs more.
+    retentionPolicy: "14d"
     retentionPolicyIntervalSeconds: 1800
     walCompression: gzip
 
