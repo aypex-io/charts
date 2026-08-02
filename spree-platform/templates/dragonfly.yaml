@@ -1,0 +1,121 @@
+{{- /*
+Dragonfly instances for the Spree backend, managed by the DRAGONFLY OPERATOR
+(dragonflydb.io/v1alpha1) rather than hand-rolled Deployments + PVCs.
+
+Why this replaced the hand-rolled templates:
+The operator has been installed on N27a since 2026-06-17, but the chart carried
+raw Deployments and a manually-created PVC — reimplementing, worse, what the
+operator exists to do. The tell was `replicas: 1` + `strategy: Recreate` on the
+queue: that constraint only existed because two pods cannot mount one RWO PVC.
+The operator gives each replica its own PVC and handles master election, so the
+constraint disappears rather than being worked around.
+
+Service names are pinned via serviceSpec.name so the in-cluster URLs the app
+already uses (redis://redis-queue:6379/0 etc.) keep working unchanged.
+*/}}
+{{- $ns := include "spree-store.namespace" . }}
+
+{{- if .Values.redisQueue.enabled }}
+{{- /*
+QUEUE — the only Dragonfly with durable state (Sidekiq jobs).
+Snapshots are operator-managed: it provisions the PVC from
+snapshot.persistentVolumeClaimSpec, so the chart no longer creates one.
+
+replicas > 1 gives real failover here. The old single-replica PVC sat on
+ceph-block-r1 (size 1, min_size 1) — the same pool whose only-copy-on-the-
+draining-node behaviour wedged a Talos node for 90 minutes on 2026-08-02.
+*/}}
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: redis-queue
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-queue
+spec:
+  image: {{ .Values.redisQueue.image.registry }}/{{ .Values.redisQueue.image.repository }}:{{ .Values.redisQueue.image.tag }}
+  replicas: {{ .Values.redisQueue.replicaCount }}
+  serviceSpec:
+    name: redis-queue
+  args:
+    - --logtostderr
+    - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
+    - --version_check=false
+  snapshot:
+    cron: {{ .Values.redisQueue.persistence.snapshotCron | quote }}
+    persistentVolumeClaimSpec:
+      accessModes:
+        - ReadWriteOnce
+      storageClassName: {{ .Values.redisQueue.persistence.storageClass }}
+      resources:
+        requests:
+          storage: {{ .Values.redisQueue.persistence.size }}
+  resources: {{- toYaml .Values.redisQueue.resources | nindent 4 }}
+  {{- if gt (int .Values.redisQueue.replicaCount) 1 }}
+  # Only meaningful with >1 replica; a hard rule on a single replica would make
+  # the pod unschedulable if its node were cordoned.
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - topologyKey: kubernetes.io/hostname
+          labelSelector:
+            matchLabels:
+              app: redis-queue
+  pdb:
+    maxUnavailable: 1
+  {{- end }}
+{{- end }}
+
+{{- if .Values.redisCache.enabled }}
+---
+{{- /*
+CACHE — ephemeral by design (--cache_mode with eviction at --maxmemory).
+No snapshot block: a cold start repopulates from Postgres, and persisting a
+cache would only add restore time. Nothing is lost when this restarts.
+*/}}
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: redis-cache
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-cache
+spec:
+  image: {{ .Values.redisCache.image.registry }}/{{ .Values.redisCache.image.repository }}:{{ .Values.redisCache.image.tag }}
+  replicas: {{ .Values.redisCache.replicaCount }}
+  serviceSpec:
+    name: redis-cache
+  args:
+    - --logtostderr
+    - --proactor_threads={{ .Values.redisCache.proactorThreads }}
+    - --cache_mode=true
+    - --maxmemory={{ .Values.redisCache.maxmemory }}
+    - --version_check=false
+  resources: {{- toYaml .Values.redisCache.resources | nindent 4 }}
+{{- end }}
+
+{{- if .Values.redisCable.enabled }}
+---
+{{- /*
+CABLE — ActionCable WebSocket fan-out. Ephemeral: a dropped message is a
+reconnect, not data loss. Kept separate from cache so eviction pressure there
+cannot drop pub/sub traffic.
+*/}}
+apiVersion: dragonflydb.io/v1alpha1
+kind: Dragonfly
+metadata:
+  name: redis-cable
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: redis-cable
+spec:
+  image: {{ .Values.redisCable.image.registry }}/{{ .Values.redisCable.image.repository }}:{{ .Values.redisCable.image.tag }}
+  replicas: {{ .Values.redisCable.replicaCount }}
+  serviceSpec:
+    name: redis-cable
+  args:
+    - --logtostderr
+    - --proactor_threads={{ .Values.redisCable.proactorThreads }}
+    - --version_check=false
+  resources: {{- toYaml .Values.redisCable.resources | nindent 4 }}
+{{- end }}
