@@ -29,9 +29,31 @@ ignore_changes on secret_string — a plain apply will NOT push it.
 {{- $fullName := printf "%s-typesense" .Release.Name }}
 {{- $peerSvc := printf "%s-typesense-peers" .Release.Name }}
 {{- $ns := include "spree-store.namespace" . }}
+{{- /*
+Peer hostnames are the SHORT form `<pod>.<headless-svc>.<namespace>`, NOT the
+full `.svc.cluster.local` FQDN, because **Typesense's Raft rejects any hostname
+>= 64 characters**:
+
+  Host name is too long (must be < 64 characters):
+  tkf-stg-typesense-0.tkf-stg-typesense-peers.tkf-stg.svc.cluster.local
+  Unable to resolve host: ... / No nodes resolved from peer configuration.
+
+That FQDN is 69 chars, so every peer failed to resolve, quorum never formed, and
+all 3 pods sat Running but never Ready. The short form is 51 chars and resolves
+via the pod's DNS search path (`search <ns>.svc.cluster.local svc.cluster.local
+cluster.local`).
+
+The guard below fails the render rather than shipping an unformable cluster —
+a long release name or namespace can still breach 64, and the symptom (pods up,
+never Ready) does not point at hostname length on its own.
+*/}}
 {{- $peers := list }}
 {{- range $i := until (int .Values.typesense.replicaCount) }}
-{{- $peers = append $peers (printf "%s-%d.%s.%s.svc.cluster.local:8107:8108" $fullName $i $peerSvc $ns) }}
+{{- $host := printf "%s-%d.%s.%s" $fullName $i $peerSvc $ns }}
+{{- if ge (len $host) 64 }}
+{{- fail (printf "typesense: Raft peer hostname %q is %d chars; Typesense requires < 64. Shorten the release name or namespace." $host (len $host)) }}
+{{- end }}
+{{- $peers = append $peers (printf "%s:8107:8108" $host) }}
 {{- end }}
 {{- $peersCsv := join "," $peers }}
 apiVersion: v1
