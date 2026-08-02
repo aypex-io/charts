@@ -1,0 +1,200 @@
+{{- if .Values.typesense.enabled }}
+{{- /*
+Typesense product-search engine for the Spree backend. Enabled per-env via the
+consuming overlay; the backend only routes search through it when its _railsEnv
+anchor also sets TYPESENSE_URL (http://{{ .Release.Name }}-typesense:8108).
+
+WHY THIS EXISTS (and why it is a StatefulSet where meilisearch is a Deployment):
+Meilisearch OSS has no clustering — one pod, one RWO PVC. On 2026-08-02 a routine
+Talos node roll took search down and wedged a node for ~90 minutes, because the
+single Meilisearch pod sat on a single-replica Ceph pool. Typesense ships
+Raft-based clustering in open source, so a 3-node cluster survives losing a node.
+
+That HA only holds if BOTH axes are redundant:
+  * 3 replicas with HARD pod anti-affinity — one per node, never two on a host
+  * PVCs on ceph-block (size 3), NEVER ceph-block-r1 (size 1, min_size 1)
+The size-1 pool is what turned a node drain into an unrecoverable unmount hang:
+the node stopped its own OSD while a pod on it still held an RBD mount whose only
+copy lived there, so the unmount blocked forever and machined refused every
+reboot ("reboot failed: locked"). Do not point this at ceph-block-r1.
+
+Auth: TYPESENSE_API_KEY comes from the spree-rails Secret — the same value the
+backend reads. One key, two consumers, exactly as meilisearch does it.
+
+PREREQUISITE: the ASM bundle for the namespace must contain `typesense_api_key`.
+Adding a key to an existing bundle needs a `-replace` of the secret_version (or a
+non-destructive put-secret-value) because the terraform resource carries
+ignore_changes on secret_string — a plain apply will NOT push it.
+*/}}
+{{- $fullName := printf "%s-typesense" .Release.Name }}
+{{- $peerSvc := printf "%s-typesense-peers" .Release.Name }}
+{{- $ns := include "spree-store.namespace" . }}
+{{- $peers := list }}
+{{- range $i := until (int .Values.typesense.replicaCount) }}
+{{- $peers = append $peers (printf "%s-%d.%s.%s.svc.cluster.local:8107:8108" $fullName $i $peerSvc $ns) }}
+{{- end }}
+{{- $peersCsv := join "," $peers }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fullName }}-nodes
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: typesense
+data:
+  {{- /*
+  Raft peer list, one line, comma-separated `host:peering_port:api_port`.
+  StatefulSet pod DNS is stable, so the file never needs regenerating as pods
+  reschedule. Typesense re-reads this file periodically, so scaling replicaCount
+  and re-rendering is enough to grow the cluster.
+  */}}
+  nodes: |-
+    {{ $peersCsv }}
+---
+{{- /* Headless service: stable per-pod DNS for Raft peering. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $peerSvc }}
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: typesense
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true  # peers must resolve before they are ready, or Raft can never form quorum
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: typesense
+  ports:
+    - name: peering
+      port: 8107
+      targetPort: peering
+    - name: http
+      port: 8108
+      targetPort: http
+---
+{{- /* Client service: what the backend's TYPESENSE_URL points at. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullName }}
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: typesense
+spec:
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: typesense
+  ports:
+    - name: http
+      port: 8108
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fullName }}
+  namespace: {{ $ns }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+    app.kubernetes.io/component: typesense
+spec:
+  serviceName: {{ $peerSvc }}
+  replicas: {{ .Values.typesense.replicaCount }}
+  # Raft needs its peers up together to elect a leader; OrderedReady would wait
+  # for pod-0 to become Ready first, which it cannot do without a quorum.
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: typesense
+  template:
+    metadata:
+      labels: {{- include "spree-store.labels" . | nindent 8 }}
+        app.kubernetes.io/component: typesense
+      annotations:
+        # Roll the pods when the peer list changes. Hash the peer list itself —
+        # hashing this template would recurse, since the annotation lives in it.
+        checksum/nodes: {{ $peersCsv | sha256sum | trunc 32 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      affinity:
+        podAntiAffinity:
+          # HARD, not preferred. Two replicas on one node means a single node
+          # reboot takes down 2 of 3 and Raft loses quorum — the HA would be
+          # decorative, which is the failure this whole subchart exists to avoid.
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/instance: {{ .Release.Name }}
+                  app.kubernetes.io/component: typesense
+      containers:
+        - name: typesense
+          image: {{ .Values.typesense.image.registry }}/{{ .Values.typesense.image.repository }}:{{ .Values.typesense.image.tag }}
+          args:
+            - --data-dir=/data
+            - --api-key=$(TYPESENSE_API_KEY)
+            - --nodes=/config/nodes
+            - --enable-cors
+          env:
+            - name: TYPESENSE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") }}
+                  key: TYPESENSE_API_KEY
+          ports:
+            - containerPort: 8108
+              name: http
+            - containerPort: 8107
+              name: peering
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            # Generous: a node loss forces a Raft re-election, and killing a pod
+            # mid-election would deepen the outage rather than recover from it.
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          resources: {{- toYaml .Values.typesense.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $fullName }}-nodes
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels: {{- include "spree-store.labels" . | nindent 10 }}
+          app.kubernetes.io/component: typesense
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: {{ .Values.typesense.persistence.storageClass }}
+        resources:
+          requests:
+            storage: {{ .Values.typesense.persistence.size }}
+{{- end }}

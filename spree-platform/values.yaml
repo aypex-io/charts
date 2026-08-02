@@ -211,6 +211,33 @@ redisCache:
 ## Auth: MEILI_MASTER_KEY is read from the spree-rails Secret (key
 ## MEILISEARCH_API_KEY) — see templates/externalsecrets.yaml. Pin the image tag
 ## (an on-disk index format lives in the PVC; do NOT track `latest`).
+typesense:
+  enabled: false
+  # 3 replicas is the whole point — Raft needs quorum. Below 3 there is no HA and
+  # you may as well stay on meilisearch.
+  replicaCount: 3
+  image:
+    registry: docker.io
+    repository: typesense/typesense
+    # PINNED to a full MAJOR.MINOR.PATCH. A floating minor tag (getmeili's v1.47)
+    # silently resolved to an engine that refused to open its own on-disk database
+    # and took prd search down on 2026-08-02. Never float this.
+    tag: "30.2"
+  persistence:
+    size: 10Gi
+    # size-3 pool. NEVER ceph-block-r1 — that pool is size 1 min_size 1, and a
+    # node draining its own OSD while a pod still holds the only RBD copy is what
+    # wedged a node for 90 minutes during the Talos roll on 2026-08-02.
+    storageClass: ceph-block
+  # Typesense holds its index fully in RAM — size memory to the catalogue, and
+  # raise it per-env in the consuming overlay rather than here.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      memory: 1Gi
+
 meilisearch:
   enabled: false
   image:
