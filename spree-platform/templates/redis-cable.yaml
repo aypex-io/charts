@@ -1,8 +1,8 @@
 {{- if .Values.redisCable.enabled }}
 {{- /*
 Dedicated Redis-compatible instance for ActionCable pub/sub (CABLE_REDIS_URL,
-db 0). Separate from the Sidekiq `{{ .Release.Name }}-redis-queue` and the
-`{{ .Release.Name }}-redis-cache` so WebSocket fan-out traffic can't contend
+db 0). Separate from the Sidekiq `redis-queue` and the
+`redis-cache` so WebSocket fan-out traffic can't contend
 with job state or get evicted by cache pressure. Pub/sub is transient (no
 stored keys), so this stays tiny and runs without eviction or persistence.
 Requires a backend image whose config/cable.yml reads CABLE_REDIS_URL
@@ -11,7 +11,7 @@ Requires a backend image whose config/cable.yml reads CABLE_REDIS_URL
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-redis-cable
+  name: redis-cable
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis-cable
@@ -66,7 +66,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-redis-cable
+  name: redis-cable
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:

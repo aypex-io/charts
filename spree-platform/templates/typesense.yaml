@@ -2,7 +2,7 @@
 {{- /*
 Typesense product-search engine for the Spree backend. Enabled per-env via the
 consuming overlay; the backend only routes search through it when its _railsEnv
-anchor also sets TYPESENSE_URL (http://{{ .Release.Name }}-typesense:8108).
+anchor also sets TYPESENSE_URL (http://typesense:8108).
 
 WHY THIS EXISTS (and why it is a StatefulSet where meilisearch is a Deployment):
 Meilisearch OSS has no clustering — one pod, one RWO PVC. On 2026-08-02 a routine
@@ -50,7 +50,7 @@ backend addresses via global.typesenseUrl, matching the meilisearch naming.
 */}}
 {{- $stsName := "typesense" }}
 {{- $peerSvc := "typesense-peers" }}
-{{- $clientSvc := printf "%s-typesense" .Release.Name }}
+{{- $clientSvc := "typesense" }}
 {{- $ns := include "spree-store.namespace" . }}
 {{- $peers := list }}
 {{- range $i := until (int .Values.typesense.replicaCount) }}

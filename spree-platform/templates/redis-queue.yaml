@@ -3,8 +3,8 @@
 Persistent Redis-compatible store for Sidekiq job queues (REDIS_URL, db 0).
 Runs WITHOUT eviction — Dragonfly OOMs when full rather than dropping keys,
 because losing a queued/in-flight job is data loss. ActionCable used to share
-this too; it now has its own `{{ .Release.Name }}-redis-cable`. Renamed from
-`{{ .Release.Name }}-dragonfly` in 0.5.0.
+this too; it now has its own `redis-cable`. Renamed from
+`dragonfly` in 0.5.0.
 
 SINGLE master, persisted (0.9.0): one replica only — Dragonfly has no built-in
 replication here, so >1 pod behind the Service would split the queue across
@@ -17,7 +17,7 @@ cron bounding loss on ungraceful death.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-redis-queue
+  name: redis-queue
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis-queue
@@ -94,12 +94,12 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-redis-queue
+            claimName: redis-queue
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ .Release.Name }}-redis-queue
+  name: redis-queue
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis-queue
@@ -114,7 +114,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-redis-queue
+  name: redis-queue
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:

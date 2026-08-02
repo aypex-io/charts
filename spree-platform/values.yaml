@@ -396,6 +396,8 @@ _nextSecurity: &nextSecurity
       type: RuntimeDefault
 
 web:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: web
   <<: *railsSecurity
   command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
   service:
@@ -421,6 +423,8 @@ web:
         command: ["sh", "-c", "sleep 10"]
 
 worker:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: worker
   <<: *railsSecurity
   command: [bundle, exec, sidekiq]
   service:
@@ -452,6 +456,8 @@ worker:
   resourcesPreset: none
 
 migrate:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: migrate
   <<: *railsSecurity
   command: [bundle, exec, rails, db:prepare]
   hook: post-install,post-upgrade
@@ -461,6 +467,8 @@ migrate:
   resourcesPreset: none
 
 seed:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: seed
   <<: *railsSecurity
   command: [bundle, exec, rails, db:seed]
   hook: post-install
@@ -470,6 +478,8 @@ seed:
   resourcesPreset: none
 
 rake:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: rake
   <<: *railsSecurity
   command: [bundle, exec, rake, --version]  # tenant overrides per env
   hook: post-install,post-upgrade
@@ -479,6 +489,8 @@ rake:
   resourcesPreset: none
 
 storefront:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: storefront
   <<: *nextSecurity
   service:
     enabled: true
@@ -506,6 +518,8 @@ storefront:
         command: ["sh", "-c", "sleep 10"]
 
 cms:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: cms
   <<: *nextSecurity
   service:
     enabled: true
