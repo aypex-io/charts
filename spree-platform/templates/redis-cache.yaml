@@ -3,14 +3,14 @@
 Shared eviction-tolerant Dragonfly cache, used by BOTH the Next.js storefront
 (cache handlers — ISR routes + Cache Components segments, logical db 0) AND the
 Rails backend (Rails.cache via REDIS_CACHE_URL, logical db 1). Kept separate
-from the Sidekiq `{{ .Release.Name }}-redis-queue` so eviction-tolerant page
+from the Sidekiq `redis-queue` so eviction-tolerant page
 + fragment cache can never OOM or evict job state. Runs in cache mode (LRU
 eviction at --maxmemory). Ephemeral; cold-start repopulates, so no persistence.
 */}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-redis-cache
+  name: redis-cache
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: redis-cache
@@ -75,7 +75,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-redis-cache
+  name: redis-cache
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:

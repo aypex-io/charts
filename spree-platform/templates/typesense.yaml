@@ -2,7 +2,7 @@
 {{- /*
 Typesense product-search engine for the Spree backend. Enabled per-env via the
 consuming overlay; the backend only routes search through it when its _railsEnv
-anchor also sets TYPESENSE_URL (http://{{ .Release.Name }}-typesense:8108).
+anchor also sets TYPESENSE_URL (http://typesense:8108).
 
 WHY THIS EXISTS (and why it is a StatefulSet where meilisearch is a Deployment):
 Meilisearch OSS has no clustering — one pod, one RWO PVC. On 2026-08-02 a routine
@@ -26,18 +26,41 @@ Adding a key to an existing bundle needs a `-replace` of the secret_version (or 
 non-destructive put-secret-value) because the terraform resource carries
 ignore_changes on secret_string — a plain apply will NOT push it.
 */}}
-{{- $fullName := printf "%s-typesense" .Release.Name }}
-{{- $peerSvc := printf "%s-typesense-peers" .Release.Name }}
+{{- /*
+Names here are deliberately NOT release-prefixed, unlike the rest of this chart.
+The namespace already isolates them — the ApplicationSet sets releaseName AND
+namespace to {customer}-{env}, so there is exactly one release per namespace.
+
+That matters because Typesense's Raft REJECTS any peer hostname >= 64 chars:
+
+  Host name is too long (must be < 64 characters)
+  Unable to resolve host ... No nodes resolved from peer configuration.
+
+The symptom is pods Running but never Ready, which points nowhere near DNS.
+The release-prefixed FQDN was 69 chars and hit exactly this.
+
+Peers are addressed as `typesense-N.typesense-peers` — 27 chars, with no
+namespace and no cluster suffix. Every peer is in the pod's own namespace, so
+this resolves on the FIRST DNS search-path entry (<ns>.svc.cluster.local). The
+length is now a constant, independent of release name and namespace, so the
+limit cannot be breached however long a future customer slug gets.
+
+The CLIENT Service keeps the release prefix — it is the external contract the
+backend addresses via global.typesenseUrl, matching the meilisearch naming.
+*/}}
+{{- $stsName := "typesense" }}
+{{- $peerSvc := "typesense-peers" }}
+{{- $clientSvc := "typesense" }}
 {{- $ns := include "spree-store.namespace" . }}
 {{- $peers := list }}
 {{- range $i := until (int .Values.typesense.replicaCount) }}
-{{- $peers = append $peers (printf "%s-%d.%s.%s.svc.cluster.local:8107:8108" $fullName $i $peerSvc $ns) }}
+{{- $peers = append $peers (printf "%s-%d.%s:8107:8108" $stsName $i $peerSvc) }}
 {{- end }}
 {{- $peersCsv := join "," $peers }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ $fullName }}-nodes
+  name: {{ $stsName }}-nodes
   namespace: {{ $ns }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: typesense
@@ -77,7 +100,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $fullName }}
+  name: {{ $clientSvc }}
   namespace: {{ $ns }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: typesense
@@ -93,7 +116,7 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ $fullName }}
+  name: {{ $stsName }}
   namespace: {{ $ns }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: typesense
@@ -182,7 +205,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: {{ $fullName }}-nodes
+            name: {{ $stsName }}-nodes
         - name: tmp
           emptyDir: {}
   volumeClaimTemplates:

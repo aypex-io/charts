@@ -2,7 +2,7 @@
 {{- /*
 Meilisearch product-search engine for the Spree backend. Enabled per-env via
 the consuming overlay; the backend only routes search through it when its
-_railsEnv anchor also sets MEILISEARCH_URL (http://{{ .Release.Name }}-meilisearch:7700).
+_railsEnv anchor also sets MEILISEARCH_URL (http://meilisearch:7700).
 
 Single-node by design (Meilisearch OSS has no clustering): one replica with a
 durable RWO PVC at /meili_data. The PVC is the durability story — the index
@@ -16,7 +16,7 @@ the same value the backend reads as MEILISEARCH_API_KEY — one key, two consume
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ .Release.Name }}-meilisearch
+  name: meilisearch
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: meilisearch
@@ -31,7 +31,7 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-meilisearch
+  name: meilisearch
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: meilisearch
@@ -102,14 +102,14 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ .Release.Name }}-meilisearch
+            claimName: meilisearch
         - name: tmp
           emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-meilisearch
+  name: meilisearch
   namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
 spec:
