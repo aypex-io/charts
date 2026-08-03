@@ -2,25 +2,25 @@ apiVersion: v2
 name: revue-platform
 description: Revue headless reviews platform umbrella — Rails 8 API + Hotwire admin (web) + pgbus worker (jobs + realtime streams on Postgres/PGMQ) on a single CNPG cluster. No Redis — jobs, streams and Rails.cache (Solid Cache) all run on Postgres. Single product (not per-customer fan-out); stg + prd envs, consumed by gitops products/revue overlays.
 type: application
-version: 0.5.0
+version: 0.5.1
 appVersion: "1.0.0"
 dependencies:
   - name: common
-    version: 2.40.0
+    version: 2.41.0
     repository: oci://registry-1.docker.io/bitnamicharts
   - name: rails-server
-    version: 0.2.0
+    version: 0.2.1
     alias: web
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-server
-    version: 0.2.0
+    version: 0.2.1
     alias: worker
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-task
-    version: 0.1.0
+    version: 0.1.1
     alias: migrate
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-task
-    version: 0.1.0
+    version: 0.1.1
     alias: seed
     repository: oci://ghcr.io/aypex-io/charts
