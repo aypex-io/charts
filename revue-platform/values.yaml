@@ -69,28 +69,12 @@ cnpg:
   appRole: revue_app
   appRolePasswordSecret: revue-app-db
 
-## @section Dragonfly engine image (shared by the redis-cache instance)
-## NB: pgbus moved BOTH background jobs and realtime streams onto Postgres/PGMQ,
-## so the persistent queue (redisQueue) and ActionCable pub/sub (redisCable)
-## Dragonfly instances are gone. Only the cache instance remains.
-dragonfly:
-  image:
-    registry: docker.dragonflydb.io
-    repository: dragonflydb/dragonfly
-    tag: v1.39.0
-
-## @section Redis cache Dragonfly (Rails.cache + rack-attack; REDIS_CACHE_URL=…/1, LRU eviction)
-redisCache:
-  enabled: true
-  replicaCount: 1
-  proactorThreads: 2
-  maxmemory: 576mb
-  resources:
-    requests:
-      cpu: 100m
-      memory: 384Mi
-    limits:
-      memory: 768Mi
+## NB: Revue has NO Redis. pgbus moved background jobs and realtime streams onto
+## Postgres/PGMQ, and Rails.cache is Solid Cache (backend ADR 0003) — also
+## Postgres. The cache Dragonfly that used to live here was removed in 0.5.0
+## once an audit showed nothing in the app ever read REDIS_CACHE_URL: the app
+## carries no redis gem, so it could not have reached it. Postgres is the only
+## datastore. Do not reintroduce a Redis without a consumer that needs one.
 
 ## @section ExternalSecrets — ONE consolidated bundle N27a/revue (ESO splits it)
 externalSecrets:
@@ -144,7 +128,7 @@ web:
   # obs/Alloy scrapes the containerPort (3000), not the Service port (80). No
   # extra port needed. Convention is prometheus.io pod annotations — Alloy
   # discovers them (no PodMonitor/ServiceMonitor CRD on this cluster; matches
-  # cnpg-cluster.yaml / redis-cache.yaml here).
+  # cnpg-cluster.yaml here).
   podAnnotations:
     prometheus.io/scrape: "true"
     prometheus.io/port: "3000"
