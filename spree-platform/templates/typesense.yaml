@@ -48,6 +48,48 @@ limit cannot be breached however long a future customer slug gets.
 The CLIENT Service keeps the release prefix — it is the external contract the
 backend addresses via global.typesenseUrl, matching the meilisearch naming.
 */}}
+{{- /*
+RECOVERING FROM A WHOLE-CLUSTER RESTART (--reset-peers-on-error)
+
+The 3-replica design above survives losing ONE node. It did NOT survive losing
+all three at once until this flag was added.
+
+Typesense resolves the nodes file to IPs, and braft persists that resolved peer
+set to /data/state on each PVC. Lose every pod simultaneously — a site power
+outage, a full cluster restart — and all three come back with new pod IPs from
+the CNI. Each node then reads a committed membership that contains none of the
+live addresses, cannot find ITSELF in it, and so refuses to even start a vote:
+
+  node default_group:<new-ip>:8107:8108 can't do pre_vote
+    as it is not in <old-ip>,<old-ip>,<old-ip>
+  Multi-node with no leader: refusing to reset peers.
+
+That is a closed loop with no self-recovery path: no node may vote, so there is
+no leader, and braft will not reconfigure a leaderless multi-node group. /health
+never goes green, so the liveness probe below SIGTERMs the container every 120s
+(30s delay + 6 x 15s) and it reloads the same stale state forever. The tell is
+pods Running but 0/1 with a climbing restart count and "Exit Code: 0 / Completed"
+— a clean shutdown, which points nowhere near Raft.
+
+--reset-peers-on-error lets a node discard that persisted set on a clustering
+error and rebuild it from the nodes file, which resolves to the CURRENT IPs.
+
+Note this is the SAME braft behaviour the PVC retention policy at the bottom of
+this file addresses (1.1.2, #45), but it is a different trigger and that policy
+cannot cover it: there the StatefulSet was deleted while its PVCs survived, so
+deleting them with it was sufficient. Here the StatefulSet was never touched —
+only the pods were rescheduled — so the PVCs are retained entirely correctly and
+the stale peer set comes back with them. This flag is the general fix; the
+retention policy remains the right behaviour on an actual delete.
+
+The trade: a node will force-reset its membership on any clustering error, not
+only this one. Accepted deliberately — an unrecoverable cluster is strictly
+worse than a node that rejoins aggressively, and Typesense recommends this for
+Kubernetes deployments, where pod IPs are ephemeral by definition.
+
+Diagnosed 2026-08-18 after a power outage left tkf-stg and tkf-prd wedged for
+days; prd product search was down the whole time.
+*/}}
 {{- $stsName := "typesense" }}
 {{- $peerSvc := "typesense-peers" }}
 {{- $clientSvc := "typesense" }}
@@ -70,6 +112,10 @@ data:
   StatefulSet pod DNS is stable, so the file never needs regenerating as pods
   reschedule. Typesense re-reads this file periodically, so scaling replicaCount
   and re-rendering is enough to grow the cluster.
+
+  This file is NOT the whole story, though. Typesense resolves these hostnames
+  to IPs and braft persists the resolved PEER SET into /data/state on the PVC.
+  That persisted set is what Raft actually votes on — see the container args.
   */}}
   nodes: |-
     {{ $peersCsv }}
@@ -164,6 +210,11 @@ spec:
             - --api-key=$(TYPESENSE_API_KEY)
             - --nodes=/config/nodes
             - --enable-cors
+            # Required for the cluster to survive losing every pod at once.
+            # See RECOVERING FROM A WHOLE-CLUSTER RESTART above: without this,
+            # braft refuses to reconfigure a leaderless group and the cluster
+            # is wedged permanently. Defaults to false.
+            - --reset-peers-on-error=true
           env:
             - name: TYPESENSE_API_KEY
               valueFrom:
