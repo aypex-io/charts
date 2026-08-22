@@ -14,6 +14,22 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   backoffLimit: {{ .Values.jobs.cmsMigrate.backoffLimit }}
+  {{- /*
+  Reap finished Jobs. Without this they accumulate forever: the Job name carries
+  a hash of the CMS image, and `hook-delete-policy: before-hook-creation` only
+  deletes a hook of the SAME name — so every image bump leaves the previous Job
+  behind. tkf-stg had 17 of them going back 65 days before this was added.
+  rails-task (migrate/seed/rake) has always defaulted ttlSecondsAfterFinished to
+  600; this Job is hand-written here and simply never got the same treatment.
+
+  Consequence to be aware of: once the TTL reaps a Job, a later sync with an
+  UNCHANGED image will recreate and re-run it, because the hash-named Job no
+  longer exists. That is safe — Payload tracks applied migrations in the database
+  and a re-run is a no-op ("Done." with no "Migrating:" lines) — and it is the
+  same behaviour rails-task has had all along. 1h rather than rails-task's 10min
+  so the logs survive long enough to read after a deploy.
+  */}}
+  ttlSecondsAfterFinished: {{ .Values.jobs.cmsMigrate.ttlSecondsAfterFinished }}
   template:
     metadata:
       labels: {{- include "spree-store.labels" . | nindent 8 }}
