@@ -232,8 +232,9 @@ redisCache:
 ## (an on-disk index format lives in the PVC; do NOT track `latest`).
 typesense:
   enabled: false
-  # 3 replicas is the whole point — Raft needs quorum. Below 3 there is no HA and
-  # you may as well stay on meilisearch.
+  # 3 replicas is the whole point — Raft needs quorum. Below 3 there is no HA.
+  # The TypesenseCluster CRD accepts ONLY 1, 3, 5 or 7 — any other value is
+  # rejected by the API server, not silently coerced.
   replicaCount: 3
   image:
     registry: docker.io
