@@ -1,311 +1,142 @@
 {{- if .Values.typesense.enabled }}
 {{- /*
-Typesense product-search engine for the Spree backend. Enabled per-env via the
-consuming overlay; the backend only routes search through it when its _railsEnv
-anchor also sets TYPESENSE_URL (http://typesense:8108).
+Typesense — managed by the Typesense Kubernetes Operator (TyKO),
+github.com/akyriako/typesense-operator, apiVersion ts.opentelekomcloud.com/v1alpha1.
 
-WHY THIS EXISTS (and why it is a StatefulSet where meilisearch is a Deployment):
-Meilisearch OSS has no clustering — one pod, one RWO PVC. On 2026-08-02 a routine
-Talos node roll took search down and wedged a node for ~90 minutes, because the
-single Meilisearch pod sat on a single-replica Ceph pool. Typesense ships
-Raft-based clustering in open source, so a 3-node cluster survives losing a node.
+WHY AN OPERATOR (2026-08-22)
+This template used to hand-roll the StatefulSet, the two Services, the nodes
+ConfigMap and the PVC retention policy. braft wedged three times in three weeks
+and each fix closed the previous trigger while opening the next:
 
-That HA only holds if BOTH axes are redundant:
-  * 3 replicas with HARD pod anti-affinity — one per node, never two on a host
-  * PVCs on ceph-block (size 3), NEVER ceph-block-r1 (size 1, min_size 1)
-The size-1 pool is what turned a node drain into an unrecoverable unmount hang:
-the node stopped its own OSD while a pod on it still held an RBD mount whose only
-copy lived there, so the unmount blocked forever and machined refused every
-reboot ("reboot failed: locked"). Do not point this at ceph-block-r1.
+  1. #45 (2026-08-02) — StatefulSet deleted, PVCs retained with a stale peer set.
+     Fixed with persistentVolumeClaimRetentionPolicy.
+  2. #50 (2026-08-18) — a power outage brought all 3 pods back on new IPs; braft
+     had persisted the RESOLVED peer set, so no node could pre_vote and no leader
+     existed to reset it. Fixed with --reset-peers-on-error=true.
+  3. 2026-08-22 — caused BY that flag. The Talos v1.13.9 roll rebooted a node;
+     tkf-prd/typesense-0 hit a clustering error, reset its peer set to ITSELF
+     ALONE, self-elected leader of a one-node group and diverged its log. The
+     real leader walked prev_log_index backwards until truncation hit a braft
+     CHECK and aborted. Crash-loops in braft::LogManager::unsafe_truncate_suffix
+     and does NOT self-heal — each restart re-elects and bumps the term.
 
-Auth: TYPESENSE_API_KEY comes from the spree-rails Secret — the same value the
-backend reads. One key, two consumers, exactly as meilisearch does it.
+--reset-peers-on-error is safe for a whole-cluster restart with all-new IPs and
+UNSAFE for one pod restarting into a healthy quorum — which is what every rolling
+node reboot produces, i.e. every Talos bump. Quorum logic does not belong in a
+Helm template; it belongs in a controller that can observe cluster state.
 
-PREREQUISITE: the ASM bundle for the namespace must contain `typesense_api_key`.
-Adding a key to an existing bundle needs a `-replace` of the secret_version (or a
-non-destructive put-secret-value) because the terraform resource carries
-ignore_changes on secret_string — a plain apply will NOT push it.
+TyKO probes each node's /status, classifies the cluster OK / SPLIT_BRAIN /
+NOT_READY / ELECTION_DEADLOCK, and recovers by scaling the StatefulSet down to a
+single node and then gradually back up — the manual manoeuvre, automated.
+
+NOT OFFICIAL, deliberately: Typesense ships no operator and no Helm chart
+(typesense/typesense-kubernetes is kustomize-only, last pushed 2023-09-21). TyKO
+is GPL-3.0, CRD v1alpha1, effectively one maintainer. Accepted 2026-08-22 as the
+only thing that manages this quorum. The operator itself is terraform-owned
+(infra: ot-modules/k8s/typesense-operator, installed cluster-wide from
+tg_cluster-landscaping); this chart owns only the CR.
+
+WHAT THE OPERATOR NAMES THINGS — these are fixed suffixes, not our choice:
+  REST Service (what the backend hits) : typesense-svc      <- global.typesenseUrl
+  headless peering Service             : typesense-sts-svc
+  StatefulSet                          : typesense-sts
+  nodes ConfigMap                      : typesense-nodeslist
+The client Service is NO LONGER `typesense`. global.typesenseUrl MUST address
+typesense-svc. spree.rb selects the provider on TYPESENSE_URL.present?, so a URL
+that is set but wrong does not fail loudly — the Typesense provider stays
+selected and search silently breaks. Verify with a real query, not pod readiness.
+
+THE 64-CHARACTER PEER LIMIT still applies and is still why the CR is named
+`typesense` and not release-prefixed. Raft rejects any peer hostname >= 64 chars
+("Host name is too long"), and the symptom is pods Running but never Ready, which
+points nowhere near DNS. TyKO builds peers as `<name>-sts-<i>.<name>-sts-svc`
+with no namespace and no cluster suffix — 33 chars here, a constant independent
+of release name and namespace. It also enforces the limit itself and fails with a
+clear error rather than producing a broken cluster.
 */}}
-{{- /*
-Names here are deliberately NOT release-prefixed, unlike the rest of this chart.
-The namespace already isolates them — the ApplicationSet sets releaseName AND
-namespace to {customer}-{env}, so there is exactly one release per namespace.
-
-That matters because Typesense's Raft REJECTS any peer hostname >= 64 chars:
-
-  Host name is too long (must be < 64 characters)
-  Unable to resolve host ... No nodes resolved from peer configuration.
-
-The symptom is pods Running but never Ready, which points nowhere near DNS.
-The release-prefixed FQDN was 69 chars and hit exactly this.
-
-Peers are addressed as `typesense-N.typesense-peers` — 27 chars, with no
-namespace and no cluster suffix. Every peer is in the pod's own namespace, so
-this resolves on the FIRST DNS search-path entry (<ns>.svc.cluster.local). The
-length is now a constant, independent of release name and namespace, so the
-limit cannot be breached however long a future customer slug gets.
-
-The CLIENT Service keeps the release prefix — it is the external contract the
-backend addresses via global.typesenseUrl, matching the meilisearch naming.
-*/}}
-{{- /*
-RECOVERING FROM A WHOLE-CLUSTER RESTART (--reset-peers-on-error)
-
-The 3-replica design above survives losing ONE node. It did NOT survive losing
-all three at once until this flag was added.
-
-Typesense resolves the nodes file to IPs, and braft persists that resolved peer
-set to /data/state on each PVC. Lose every pod simultaneously — a site power
-outage, a full cluster restart — and all three come back with new pod IPs from
-the CNI. Each node then reads a committed membership that contains none of the
-live addresses, cannot find ITSELF in it, and so refuses to even start a vote:
-
-  node default_group:<new-ip>:8107:8108 can't do pre_vote
-    as it is not in <old-ip>,<old-ip>,<old-ip>
-  Multi-node with no leader: refusing to reset peers.
-
-That is a closed loop with no self-recovery path: no node may vote, so there is
-no leader, and braft will not reconfigure a leaderless multi-node group. /health
-never goes green, so the liveness probe below SIGTERMs the container every 120s
-(30s delay + 6 x 15s) and it reloads the same stale state forever. The tell is
-pods Running but 0/1 with a climbing restart count and "Exit Code: 0 / Completed"
-— a clean shutdown, which points nowhere near Raft.
-
---reset-peers-on-error lets a node discard that persisted set on a clustering
-error and rebuild it from the nodes file, which resolves to the CURRENT IPs.
-
-Note this is the SAME braft behaviour the PVC retention policy at the bottom of
-this file addresses (1.1.2, #45), but it is a different trigger and that policy
-cannot cover it: there the StatefulSet was deleted while its PVCs survived, so
-deleting them with it was sufficient. Here the StatefulSet was never touched —
-only the pods were rescheduled — so the PVCs are retained entirely correctly and
-the stale peer set comes back with them. This flag is the general fix; the
-retention policy remains the right behaviour on an actual delete.
-
-The trade: a node will force-reset its membership on any clustering error, not
-only this one. Accepted deliberately — an unrecoverable cluster is strictly
-worse than a node that rejoins aggressively, and Typesense recommends this for
-Kubernetes deployments, where pod IPs are ephemeral by definition.
-
-Diagnosed 2026-08-18 after a power outage left tkf-stg and tkf-prd wedged for
-days; prd product search was down the whole time.
-*/}}
-{{- $stsName := "typesense" }}
-{{- $peerSvc := "typesense-peers" }}
-{{- $clientSvc := "typesense" }}
-{{- $ns := include "spree-store.namespace" . }}
-{{- $peers := list }}
-{{- range $i := until (int .Values.typesense.replicaCount) }}
-{{- $peers = append $peers (printf "%s-%d.%s:8107:8108" $stsName $i $peerSvc) }}
-{{- end }}
-{{- $peersCsv := join "," $peers }}
-apiVersion: v1
-kind: ConfigMap
+apiVersion: ts.opentelekomcloud.com/v1alpha1
+kind: TypesenseCluster
 metadata:
-  name: {{ $stsName }}-nodes
-  namespace: {{ $ns }}
-  labels: {{- include "spree-store.labels" . | nindent 4 }}
-    app.kubernetes.io/component: typesense
-data:
-  {{- /*
-  Raft peer list, one line, comma-separated `host:peering_port:api_port`.
-  StatefulSet pod DNS is stable, so the file never needs regenerating as pods
-  reschedule. Typesense re-reads this file periodically, so scaling replicaCount
-  and re-rendering is enough to grow the cluster.
-
-  This file is NOT the whole story, though. Typesense resolves these hostnames
-  to IPs and braft persists the resolved PEER SET into /data/state on the PVC.
-  That persisted set is what Raft actually votes on — see the container args.
-  */}}
-  nodes: |-
-    {{ $peersCsv }}
----
-{{- /* Headless service: stable per-pod DNS for Raft peering. */}}
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $peerSvc }}
-  namespace: {{ $ns }}
+  name: typesense
+  namespace: {{ include "spree-store.namespace" . }}
   labels: {{- include "spree-store.labels" . | nindent 4 }}
     app.kubernetes.io/component: typesense
 spec:
-  clusterIP: None
-  publishNotReadyAddresses: true  # peers must resolve before they are ready, or Raft can never form quorum
-  selector:
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: typesense
-  ports:
-    - name: peering
-      port: 8107
-      targetPort: peering
-    - name: http
-      port: 8108
-      targetPort: http
----
-{{- /* Client service: what the backend's TYPESENSE_URL points at. */}}
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $clientSvc }}
-  namespace: {{ $ns }}
-  labels: {{- include "spree-store.labels" . | nindent 4 }}
-    app.kubernetes.io/component: typesense
-spec:
-  selector:
-    app.kubernetes.io/instance: {{ .Release.Name }}
-    app.kubernetes.io/component: typesense
-  ports:
-    - name: http
-      port: 8108
-      targetPort: http
----
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: {{ $stsName }}
-  namespace: {{ $ns }}
-  labels: {{- include "spree-store.labels" . | nindent 4 }}
-    app.kubernetes.io/component: typesense
-spec:
-  serviceName: {{ $peerSvc }}
+  image: {{ .Values.typesense.image.registry }}/{{ .Values.typesense.image.repository }}:{{ .Values.typesense.image.tag }}
+  {{- /* Raft sizes: the CRD accepts only 1, 3, 5 or 7. */}}
   replicas: {{ .Values.typesense.replicaCount }}
-  # Raft needs its peers up together to elect a leader; OrderedReady would wait
-  # for pod-0 to become Ready first, which it cannot do without a quorum.
-  podManagementPolicy: Parallel
-  selector:
-    matchLabels:
-      app.kubernetes.io/instance: {{ .Release.Name }}
-      app.kubernetes.io/component: typesense
-  template:
-    metadata:
-      labels: {{- include "spree-store.labels" . | nindent 8 }}
-        app.kubernetes.io/component: typesense
-      annotations:
-        # Roll the pods when the peer list changes. Hash the peer list itself —
-        # hashing this template would recurse, since the annotation lives in it.
-        checksum/nodes: {{ $peersCsv | sha256sum | trunc 32 }}
-    spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      affinity:
-        podAntiAffinity:
-          # HARD, not preferred. Two replicas on one node means a single node
-          # reboot takes down 2 of 3 and Raft loses quorum — the HA would be
-          # decorative, which is the failure this whole subchart exists to avoid.
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - topologyKey: kubernetes.io/hostname
-              labelSelector:
-                matchLabels:
-                  app.kubernetes.io/instance: {{ .Release.Name }}
-                  app.kubernetes.io/component: typesense
-      containers:
-        - name: typesense
-          image: {{ .Values.typesense.image.registry }}/{{ .Values.typesense.image.repository }}:{{ .Values.typesense.image.tag }}
-          args:
-            - --data-dir=/data
-            - --api-key=$(TYPESENSE_API_KEY)
-            - --nodes=/config/nodes
-            - --enable-cors
-            # Required for the cluster to survive losing every pod at once.
-            # See RECOVERING FROM A WHOLE-CLUSTER RESTART above: without this,
-            # braft refuses to reconfigure a leaderless group and the cluster
-            # is wedged permanently. Defaults to false.
-            - --reset-peers-on-error=true
-          env:
-            - name: TYPESENSE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") }}
-                  key: TYPESENSE_API_KEY
-          ports:
-            - containerPort: 8108
-              name: http
-            - containerPort: 8107
-              name: peering
-          readinessProbe:
-            httpGet:
-              path: /health
-              port: http
-            initialDelaySeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /health
-              port: http
-            # Generous: a node loss forces a Raft re-election, and killing a pod
-            # mid-election would deepen the outage rather than recover from it.
-            initialDelaySeconds: 30
-            periodSeconds: 15
-            failureThreshold: 6
-          resources: {{- toYaml .Values.typesense.resources | nindent 12 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities:
-              drop: [ALL]
-          volumeMounts:
-            - name: data
-              mountPath: /data
-            - name: config
-              mountPath: /config
-            - name: tmp
-              mountPath: /tmp
-      volumes:
-        - name: config
-          configMap:
-            name: {{ $stsName }}-nodes
-        - name: tmp
-          emptyDir: {}
+  enableCors: true
+
   {{- /*
-  Delete the PVCs when the StatefulSet is deleted.
+  The admin API key. TyKO reads the Secret named here and expects the data key
+  `typesense-api-key` inside it (ClusterAdminApiKeySecretKeyName) — that is a
+  KUBERNETES Secret data key, NOT the ASM bundle key, which stays
+  `typesense_api_key`. See templates/externalsecrets.yaml, which now projects the
+  same ASM value under both TYPESENSE_API_KEY (for the Rails backend) and
+  typesense-api-key (for the operator).
 
-  Typesense's Raft persists cluster membership BY POD IP. If the PVCs outlive
-  the StatefulSet, every node reboots with membership listing the PREVIOUS
-  pods' IPs, so no node is in its own recorded membership, none can vote, and
-  Typesense refuses to recover:
-
-    node 10.244.3.82:8107 can't do pre_vote as it is not in
-      10.244.7.87, 10.244.3.184, 10.244.11.202
-    Multi-node with no leader: refusing to reset peers.
-
-  The pods sit Running and never Ready, with only that warning to go on. It
-  deadlocked the stg rollout on 2026-08-02 and needed the PVCs deleted by hand.
-
-  Retaining them buys nothing: the index is rebuilt by `rake spree:search:reindex`
-  (the chart's rake Job runs it on every deploy), so a wiped volume costs a
-  reindex, not data. whenScaled stays Retain so scaling in and back out does not
-  silently discard a replica's data mid-operation.
-
-  NOTE this field IS mutable, unlike volumeClaimTemplates itself — adding it
-  does not require another StatefulSet recreate.
+  Do NOT omit this: with no adminApiKey the operator GENERATES a random key into
+  an Immutable Secret, and the backend has no way to learn it.
   */}}
-  persistentVolumeClaimRetentionPolicy:
-    whenDeleted: Delete
-    whenScaled: Retain
-  volumeClaimTemplates:
-    # STABLE labels only — NOT spree-store.labels. That helper includes
-    # `helm.sh/chart: <name>-<version>`, and volumeClaimTemplates is an
-    # IMMUTABLE field of a StatefulSet. Using it here meant every chart version
-    # bump changed the template and Kubernetes rejected the patch with:
-    #   Forbidden: updates to statefulset spec for fields other than
-    #   'replicas', 'ordinals', 'template', ... are forbidden
-    # which wedged the 1.0.0 -> 1.1.0 sync. Nothing version-bearing may appear
-    # here, or the next bump breaks the same way and needs a manual recreate.
-    - metadata:
-        name: data
-        labels:
-          app.kubernetes.io/name: spree-store
-          app.kubernetes.io/instance: {{ .Release.Name }}
-          app.kubernetes.io/part-of: spree-store
-          app.kubernetes.io/component: typesense
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        storageClassName: {{ .Values.typesense.persistence.storageClass }}
-        resources:
-          requests:
-            storage: {{ .Values.typesense.persistence.size }}
+  adminApiKey:
+    name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "spree-rails") }}
+    namespace: {{ include "spree-store.namespace" . }}
+
+  {{- /*
+  MUST be ceph-block (size 3), NEVER ceph-block-r1 (size 1, min_size 1). A
+  size-1 pool is what turned a node drain into an unrecoverable unmount hang on
+  2026-08-02: the node stopped its own OSD while a pod on it still held an RBD
+  mount whose only copy lived there, so the unmount blocked forever and machined
+  refused every reboot ("reboot failed: locked"). No BMC on N27a — that is a
+  physical trip to the rack.
+  */}}
+  storage:
+    size: {{ .Values.typesense.persistence.size }}
+    storageClassName: {{ .Values.typesense.persistence.storageClass }}
+    accessMode: ReadWriteOnce
+
+  {{- /*
+  resetPeersOnError defaults to TRUE in the CRD. We force it FALSE: that flag is
+  exactly what split-brained tkf-prd on 2026-08-22 (see above). The operator's
+  own SPLIT_BRAIN detection and scale-to-one recovery is the correct mechanism —
+  it observes the whole cluster, where a single node resetting its own membership
+  cannot tell "everyone moved" from "only I restarted".
+  */}}
+  resetPeersOnError: false
+  {{- /* Re-add nodes one at a time after a recovery instead of all at once. */}}
+  incrementalQuorumRecovery: true
+
+  {{- /*
+  HARD one-pod-per-node. Two replicas on one node means a single node reboot
+  takes down 2 of 3 and Raft loses quorum — the HA would be decorative, which is
+  the failure this whole component exists to avoid. whenUnsatisfiable
+  DoNotSchedule is the hard form; TyKO injects the labelSelector (app:
+  typesense-sts) when it is omitted, so do not hand-write one.
+  */}}
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+
+  {{- /* N27a enforces PodSecurity `restricted` on tenant namespaces. */}}
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      runAsUser: 1000
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    typesense:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+    healthcheck:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop: [ALL]
+
+  resources: {{- toYaml .Values.typesense.resources | nindent 4 }}
 {{- end }}
