@@ -17,15 +17,15 @@ dependencies:
     alias: worker
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-task
-    version: 0.1.1
+    version: 0.1.2
     alias: migrate
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-task
-    version: 0.1.1
+    version: 0.1.2
     alias: seed
     repository: oci://ghcr.io/aypex-io/charts
   - name: rails-task
-    version: 0.1.1
+    version: 0.1.2
     alias: rake
     repository: oci://ghcr.io/aypex-io/charts
   - name: nextjs
