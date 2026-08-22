@@ -309,6 +309,11 @@ jobs:
   cmsMigrate:
     enabled: true
     backoffLimit: 3
+    # Reap finished Jobs so they stop accumulating — the Job is hash-named by CMS
+    # image, and hook-delete-policy only removes a SAME-named hook, so every bump
+    # orphaned the previous one (17 stale Jobs in tkf-stg over 65 days).
+    # 1h, not rails-task's 600s: long enough to read the logs after a deploy.
+    ttlSecondsAfterFinished: 3600
 
   ## @section Nightly prod→staging data refresh (sanitize-before-load).
   ## Renders a CronJob ONLY when enabled (stg overlay). Rebuilds stg's spree +
