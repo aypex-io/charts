@@ -148,8 +148,8 @@ redisQueue:
   replicaCount: 1
   proactorThreads: 2
   # Snapshot persistence so a pod restart doesn't drop queued/scheduled/retry
-  # jobs. Tiny store → a small PVC; snapshots are MB. ceph-block-r1 matches the
-  # CNPG/Meilisearch pattern. snapshotCron bounds loss on ungraceful death.
+  # jobs. Tiny store → a small PVC; snapshots are MB.
+  # snapshotCron bounds loss on ungraceful death.
   persistence:
     size: 2Gi
     # size-3 pool. Was ceph-block-r1 (size 1, min_size 1) — the pool whose
@@ -219,17 +219,22 @@ redisCache:
     limits:
       memory: 768Mi
 
-## @section Meilisearch (product search engine)
-## Optional, opinion-free, disabled by default so tenants on the DB search
-## provider are unaffected. When enabled, Spree's built-in
-## Spree::SearchProvider::Meilisearch takes over IFF the backend also gets
-## MEILISEARCH_URL set (wired in the consuming overlay's _railsEnv anchor).
-## Single-node by design — Meilisearch OSS has no clustering, so durability
-## comes from a PVC (index survives restarts) + Spree's auto-index-on-save,
-## NOT from replicas. The PVC is RWO, so the Deployment uses strategy Recreate.
-## Auth: MEILI_MASTER_KEY is read from the spree-rails Secret (key
-## MEILISEARCH_API_KEY) — see templates/externalsecrets.yaml. Pin the image tag
-## (an on-disk index format lives in the PVC; do NOT track `latest`).
+## @section Typesense (product search engine)
+## Optional, disabled by default so tenants on the DB search provider are
+## unaffected. When enabled, Spree::SearchProvider::Typesense takes over IFF the
+## backend also gets TYPESENSE_URL set (wired in the consuming overlay's
+## _railsEnv anchor) — spree.rb gates purely on that var being present.
+##
+## Managed by the Typesense Kubernetes Operator (TyKO) via a TypesenseCluster CR,
+## NOT by a chart-owned StatefulSet — see templates/typesense.yaml for why (braft
+## wedged three times in three weeks when this chart owned the quorum logic).
+## The operator owns the resource names: the REST Service the backend addresses
+## is `typesense-svc`, not `typesense`.
+##
+## Auth: the admin key is read from the spree-rails Secret. TyKO expects the data
+## key `typesense-api-key`; the Rails backend reads TYPESENSE_API_KEY. Both are
+## projected from the same ASM value — see templates/externalsecrets.yaml.
+## Pin the image tag (an on-disk index format lives in the PVC; never float it).
 typesense:
   enabled: false
   # 3 replicas is the whole point — Raft needs quorum. Below 3 there is no HA.
@@ -239,8 +244,9 @@ typesense:
   image:
     registry: docker.io
     repository: typesense/typesense
-    # PINNED to a full MAJOR.MINOR.PATCH. A floating minor tag (getmeili's v1.47)
-    # silently resolved to an engine that refused to open its own on-disk database
+    # PINNED to a full MAJOR.MINOR.PATCH. Kept as history because it is the
+    # reason for this rule: a floating minor tag on the previous search engine
+    # silently resolved to a build that refused to open its own on-disk database
     # and took prd search down on 2026-08-02. Never float this.
     tag: "30.2"
   persistence:
@@ -257,23 +263,6 @@ typesense:
       memory: 512Mi
     limits:
       memory: 1Gi
-
-meilisearch:
-  enabled: false
-  image:
-    registry: docker.io
-    repository: getmeili/meilisearch
-    tag: v1.47
-  persistence:
-    size: 5Gi
-    storageClass: ceph-block-r1
-  # Pod resources — sized per-env in the consuming overlays.
-  resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      memory: 512Mi
 
 ## @section ExternalSecrets
 externalSecrets:

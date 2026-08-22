@@ -31,7 +31,10 @@ the queue. The cache/cable instances are the opposite: ephemeral, eviction-toler
   shutdown, plus a periodic cron for ungraceful death.
 - **Pin the Dragonfly image** — never `:latest` in prod.
 
-Mirror the in-chart Meilisearch pattern (`Deployment + PVC + Recreate`).
+That shape — `Deployment + RWO PVC + strategy: Recreate` — is the right one for any
+single-writer store in this chart. (It was previously described here as "the in-chart
+Meilisearch pattern"; that subchart was removed in 1.2.2, so the pattern is stated
+directly rather than by reference.)
 
 ### Config
 Deployment container args (`templates/redis-queue.yaml`):
