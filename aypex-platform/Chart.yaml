@@ -8,7 +8,7 @@ description: >-
   per-customer fan-out); stg + prd envs, consumed by the gitops brands/tech
   overlays.
 type: application
-version: 0.1.2
+version: 0.1.3
 appVersion: "1.0.0"
 dependencies:
   - name: common
