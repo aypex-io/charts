@@ -1,0 +1,327 @@
+## aypex-platform umbrella — brand-neutral defaults.
+## Env overlays live in gitops-aypex brands/tech/{base,stg,prd}/values.yaml.
+
+## @section Top-level
+env: ""                  # "stg" | "prd" — env overlay
+namespace: ""            # auto: "{name}-{env}" — see _helpers.tpl
+name: aypex-tech         # resource-name prefix (this is a single brand)
+clusterDomain: cluster.local
+
+## @section Hostnames + gateway wiring
+##
+## `site` may be a LIST: the public storefront can answer on more than one
+## domain (an apex plus a staging host during a cutover). The others are single
+## hostnames.
+##
+## cms is the Payload admin, which lives inside the SAME Next.js app as the
+## public site. It gets its own hostname because Spree's admin already occupies
+## /admin on the admin host, and because a hostname is what Cloudflare Access
+## is pointed at. Leave it empty to publish no CMS route at all.
+hostnames:
+  site: ""               # tech-stg.aypex.io | aypex.tech
+  api: ""                # tech-api-stg.aypex.io | api.aypex.tech
+  admin: ""              # tech-admin-stg.aypex.io | admin.aypex.tech
+  cms: ""                # tech-cms-stg.aypex.io | cms.aypex.tech
+
+gateway:
+  name: main
+  namespace: gateway
+  ## Each route binds ONLY the listener whose hostname it intersects; a route
+  ## naming a listener it cannot match reports NoMatchingListenerHostname while
+  ## the other listener keeps serving, which makes it easy to miss.
+  sectionNames:
+    default: []          # fallback listener for every route
+    site: []
+    api: []
+    admin: []
+    cms: []
+
+## @section CNPG cluster (shared by spree + payload)
+##
+## ONE cluster, TWO databases. The first entry is created by bootstrap.initdb
+## with its owner's password taken from `passwordSecret`; every later entry gets
+## a Database CR AND an entry under spec.managed.roles -- without the managed
+## role CNPG mints a random password the ExternalSecret cannot match and the app
+## fails with 28P01.
+cnpg:
+  name: aypex-tech-db
+  instances: 1
+  maxSyncReplicas: 0
+  imageName: ghcr.io/cloudnative-pg/postgresql:18
+  ## NOT ceph-block-r1. That is the size-1 pool whose only-copy-on-a-draining-
+  ## node behaviour wedged a Talos node for 90 minutes on 2026-08-02.
+  storageClass: ceph-block
+  storageSize: 20Gi
+  walStorageSize: 5Gi
+  parameters: {}
+  resources: {}
+  affinity: {}
+
+  databases:
+    - name: spree
+      owner: spree
+      passwordSecret: aypex-tech-spree-db
+    - name: payload
+      owner: payload
+      passwordSecret: aypex-tech-payload-db
+
+  ## S3 WAL archiving. Off by default so the bare chart renders; the env
+  ## overlay turns it on. On a REBUILD the S3 WAL prefix must be wiped first or
+  ## the new cluster refuses to archive into a foreign timeline.
+  objectStore:
+    enabled: false
+    bucket: ""
+    path: ""
+    walCompression: gzip
+    retentionPolicy: "30d"
+    retentionPolicyIntervalSeconds: 3600
+
+  scheduledBackup:
+    enabled: false
+    schedule: "0 0 3 * * *"
+    immediate: true
+
+## @section Dragonfly engine image (shared by both redis-* instances)
+dragonfly:
+  image:
+    registry: ghcr.io
+    repository: dragonflydb/dragonfly
+    tag: v1.36.0
+
+## @section Redis queue Dragonfly (Sidekiq job queues)
+## The only Dragonfly here with durable state: losing it loses queued jobs,
+## including the sign-in code somebody is waiting on.
+redisQueue:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
+  image:
+    registry: ghcr.io
+    repository: dragonflydb/dragonfly
+    tag: v1.36.0
+  persistence:
+    storageClass: ceph-block
+    size: 2Gi
+    snapshotCron: "*/15 * * * *"
+  resources: {}
+
+## @section Redis cache Dragonfly (Rails.cache + the Next.js render cache)
+## Ephemeral by design -- nothing here is worth persisting.
+redisCache:
+  enabled: true
+  replicaCount: 1
+  proactorThreads: 2
+  maxmemory: 512mb
+  image:
+    registry: ghcr.io
+    repository: dragonflydb/dragonfly
+    tag: v1.36.0
+  resources: {}
+
+## @section ExternalSecrets
+externalSecrets:
+  storeName: cluster-secret-store
+  storeKind: ClusterSecretStore
+  refreshInterval: 1h
+
+  asmKeys:
+    ## ONE consolidated bundle — N27a/aypex-tech. ESO extracts it and splits it
+    ## into every app Secret. Env-neutral: one AWS account per env, so the
+    ## bundle carries flat unsuffixed keys. Set in the gitops base overlay.
+    bundle: ""
+    ## service_user/<acct>/* IAM-key secrets stay separate and env-scoped; the
+    ## env overlay supplies these.
+    spreeS3: ""
+    mediaS3: ""
+    cnpgBackup: ""
+
+## @section S3 buckets — env overlay supplies.
+## Under `global` so they reach the rails-server / nextjs subcharts, where the
+## base overlay's extraEnvVars reference them.
+global:
+  s3:
+    spreeBucket: ""      # aypex-tech-spree-storage-...
+    mediaBucket: ""      # aypex-tech-media-...
+
+## @section Image tags for the payload-migrate hook Job + its hash-naming.
+## Empty defaults so the bare chart renders and lints; the gitops env overlay
+## supplies the real tags, kept in lockstep with web/site.image.tag.
+images:
+  spree: ""
+  site: ""
+
+## @section Payload migrate Job.
+## Lives in the umbrella rather than rails-task, which is Rails-specific: this
+## runs `payload migrate` inside the Next.js image.
+jobs:
+  payloadMigrate:
+    enabled: true
+    backoffLimit: 3
+    ## Reap finished Jobs. The Job is hash-named by site image, and
+    ## hook-delete-policy only removes a SAME-named hook, so every bump would
+    ## otherwise orphan the previous one. 1h, not rails-task's 600s: long
+    ## enough to read the logs after a deploy.
+    ttlSecondsAfterFinished: 3600
+
+## @section Subchart defaults — generic Rails / Next defaults.
+## The base overlay supplies image registry + repository; the env overlay
+## supplies the tag and replica count.
+##
+## Aliases:
+##   web, worker         -> rails-server (Deployments)
+##   migrate, seed, rake -> rails-task   (Jobs, helm post-install hooks)
+##   site                -> nextjs       (Deployment; storefront + Payload admin)
+
+_railsSecurity: &railsSecurity
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    fsGroupChangePolicy: Always
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+_nextSecurity: &nextSecurity
+  podSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  containerSecurityContext:
+    enabled: true
+    runAsUser: 1000
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+
+web:
+  # Unprefixed: the namespace already isolates this release.
+  fullnameOverride: web
+  <<: *railsSecurity
+  command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3000
+  resourcesPreset: none
+  # Drain before SIGTERM so the gateway deregisters this endpoint first; a roll
+  # otherwise severs in-flight SSR fetches mid-request. Never drop below
+  # desired replicas during the roll.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  terminationGracePeriodSeconds: 40
+  lifecycleHooks:
+    preStop:
+      exec:
+        command: ["sh", "-c", "sleep 10"]
+
+worker:
+  fullnameOverride: worker
+  <<: *railsSecurity
+  command: [bundle, exec, sidekiq]
+  service:
+    enabled: false
+  # Sidekiq serves no HTTP, so the default /up probes are off. Liveness is a
+  # file-freshness check: the backend touches /tmp/sidekiq_alive on every
+  # heartbeat (~10s), so a wedged heartbeat thread goes stale and k8s restarts
+  # the pod. Requires an image carrying the sidekiq marker hooks -- an older
+  # image never creates the file and would crashloop on this probe.
+  # No readiness probe: the worker has no Service, so readiness gates nothing.
+  livenessProbe:
+    enabled: false
+  readinessProbe:
+    enabled: false
+  customLivenessProbe:
+    exec:
+      command:
+        - sh
+        - -c
+        # Fail if the marker is missing or older than 45s (~4 missed beats).
+        - 'test "$(( $(date +%s) - $(stat -c %Y /tmp/sidekiq_alive 2>/dev/null || echo 0) ))" -lt 45'
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  resourcesPreset: none
+
+migrate:
+  fullnameOverride: migrate
+  <<: *railsSecurity
+  # db:prepare, not db:create + db:schema:load: the database already exists
+  # (CNPG made it) and prepare is idempotent across both first install and
+  # every upgrade.
+  command: [bundle, exec, rails, db:prepare]
+  hook: post-install,post-upgrade
+  hookWeight: "-5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 3
+  resourcesPreset: none
+
+seed:
+  fullnameOverride: seed
+  <<: *railsSecurity
+  # post-install ONLY. The seeds are create-only and safe to re-run, but a
+  # seed on every upgrade is a standing invitation to re-create something a
+  # human deliberately changed in the admin.
+  command: [bundle, exec, rails, db:seed]
+  hook: post-install
+  hookWeight: "0"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 1
+  resourcesPreset: none
+
+rake:
+  fullnameOverride: rake
+  <<: *railsSecurity
+  command: [bundle, exec, rake, --version]  # env overlay overrides
+  hook: post-install,post-upgrade
+  hookWeight: "5"
+  hookDeletePolicy: before-hook-creation
+  # 3, not 1: this hook races the backend rollout, and on a deploy that changes
+  # a dependency's address the Job can start before the new Service resolves.
+  backoffLimit: 3
+  resourcesPreset: none
+
+site:
+  fullnameOverride: site
+  <<: *nextSecurity
+  service:
+    enabled: true
+    ports:
+      http: 80
+  containerPorts:
+    http: 3000
+  resourcesPreset: none
+  # Next.js standalone with cacheComponents on a READ-ONLY root filesystem.
+  # Seed a writable .next/server or ISR and image optimisation fail with EROFS
+  # on every revalidation -- silently, as a cache miss rather than an error.
+  writableNextServer:
+    enabled: true
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  terminationGracePeriodSeconds: 40
+  lifecycleHooks:
+    preStop:
+      exec:
+        command: ["sh", "-c", "sleep 10"]

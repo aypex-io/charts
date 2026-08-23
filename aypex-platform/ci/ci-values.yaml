@@ -1,0 +1,81 @@
+# CI render fixture — a representative env so `helm template` exercises every
+# template (CNPG cluster/databases/objectstore/scheduledbackup, dragonfly,
+# externalsecrets, httproutes, referencegrant, job-payload-migrate). Not a real
+# deployment; the shape mirrors a gitops brands/tech/<env> overlay.
+env: stg
+
+hostnames:
+  # A LIST, to exercise the multi-hostname branch of the site route.
+  site: [tech.example.test, www.example.test]
+  api: tech-api.example.test
+  admin: tech-admin.example.test
+  cms: tech-cms.example.test
+
+gateway:
+  sectionNames:
+    default: [wildcard-example-test-https]
+
+cnpg:
+  name: ci-db
+  instances: 1
+  databases:
+    - name: spree
+      owner: spree
+      passwordSecret: aypex-tech-spree-db
+    - name: payload
+      owner: payload
+      passwordSecret: aypex-tech-payload-db
+  scheduledBackup:
+    enabled: true
+    immediate: true
+  objectStore:
+    enabled: true
+    bucket: ci-data-backups
+    path: pg/aypex-tech/stg
+
+externalSecrets:
+  asmKeys:
+    bundle: N27a/aypex-tech
+    spreeS3: service_user/000000000000/aypex-tech-spree-stg
+    mediaS3: service_user/000000000000/aypex-tech-media-stg
+    cnpgBackup: service_user/000000000000/cnpg
+
+global:
+  s3:
+    spreeBucket: aypex-tech-spree-storage-ci
+    mediaBucket: aypex-tech-media-ci
+
+images:
+  spree: v0.1.0
+  site: v0.1.0
+
+web:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-spree
+    tag: v0.1.0
+worker:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-spree
+    tag: v0.1.0
+migrate:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-spree
+    tag: v0.1.0
+seed:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-spree
+    tag: v0.1.0
+rake:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-spree
+    tag: v0.1.0
+site:
+  image:
+    registry: ghcr.io
+    repository: aypex-io/aypex-tech-site
+    tag: v0.1.0

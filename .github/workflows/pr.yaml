@@ -15,14 +15,19 @@ jobs:
       - name: Lint and template each chart
         run: |
           set -euo pipefail
-          for chart in rails-server rails-task nextjs; do
+          # The umbrellas are linted here too. Their OCI dependencies are
+          # public, so `helm dependency update` works before any GHCR login --
+          # and a template parse error in an umbrella otherwise stays hidden
+          # until someone cuts a release tag.
+          for chart in rails-server rails-task nextjs spree-platform revue-platform aypex-platform; do
             echo "==> $chart"
             cd "$chart"
             helm dependency update
             helm lint .
             for f in ci/*-values.yaml; do
               echo "    helm template -f $f"
-              helm template ci-release . -f "$f" > /dev/null
+              helm template ci-release . -f "$f" > /tmp/rendered.yaml
+              ../.github/check-separators.sh /tmp/rendered.yaml
             done
             cd ..
           done
