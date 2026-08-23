@@ -19,6 +19,19 @@ Service names are pinned via serviceSpec.name so the in-cluster URLs the app
 already uses (redis://redis-queue:6379/0 etc.) keep working unchanged.
 */}}
 {{- $ns := include "aypex.namespace" . }}
+{{- $securityCtx := .Values.dragonfly.securityContext | default dict }}
+{{- /*
+The operator's default pod does NOT satisfy PodSecurity `restricted`: it sets
+no runAsNonRoot, no seccompProfile, drops no capabilities and leaves
+allowPrivilegeEscalation unset. In a restricted namespace the StatefulSet is
+created and then every pod is REFUSED at admission -- the Dragonfly CR happily
+reports "ResourcesCreated" while nothing runs, and the only sign is a
+FailedCreate event on the StatefulSet.
+
+Rather than relax the namespace to accommodate it, the CRD's own
+podSecurityContext / containerSecurityContext fields are used to make the pod
+compliant. Keeps PSA restricted for everything in here.
+*/}}
 
 {{- if .Values.redisQueue.enabled }}
 {{- /*
@@ -56,6 +69,12 @@ spec:
         requests:
           storage: {{ .Values.redisQueue.persistence.size }}
   resources: {{- toYaml .Values.redisQueue.resources | nindent 4 }}
+  {{- with $securityCtx.pod }}
+  podSecurityContext: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $securityCtx.container }}
+  containerSecurityContext: {{- toYaml . | nindent 4 }}
+  {{- end }}
   {{- if gt (int .Values.redisQueue.replicaCount) 1 }}
   # Only meaningful with >1 replica; a hard rule on a single replica would make
   # the pod unschedulable if its node were cordoned.
@@ -97,4 +116,10 @@ spec:
     - --maxmemory={{ .Values.redisCache.maxmemory }}
     - --version_check=false
   resources: {{- toYaml .Values.redisCache.resources | nindent 4 }}
+  {{- with $securityCtx.pod }}
+  podSecurityContext: {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $securityCtx.container }}
+  containerSecurityContext: {{- toYaml . | nindent 4 }}
+  {{- end }}
 {{- end }}
