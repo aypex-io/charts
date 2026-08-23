@@ -79,3 +79,11 @@ site:
     registry: ghcr.io
     repository: aypex-io/aypex-tech-site
     tag: v0.1.0
+
+# Exercises the separate-migrate-image branch of the Job template.
+jobs:
+  payloadMigrate:
+    image:
+      registry: ghcr.io
+      repository: aypex-io/aypex-tech-site-migrate
+      tag: v0.1.0
