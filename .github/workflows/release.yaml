@@ -53,7 +53,8 @@ jobs:
           helm lint .
           for f in ci/*-values.yaml; do
             echo "==> helm template -f $f"
-            helm template ci-release . -f "$f" > /dev/null
+            helm template ci-release . -f "$f" > /tmp/rendered.yaml
+            ../.github/check-separators.sh /tmp/rendered.yaml
           done
 
       - name: Login to GHCR
