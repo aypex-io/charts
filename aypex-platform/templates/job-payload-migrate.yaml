@@ -1,8 +1,20 @@
 {{- if and .Values.jobs.payloadMigrate.enabled .Values.images.site }}
 {{- $payloadDb := include "aypex.resourceName" (dict "ctx" . "suffix" "payload-db") -}}
 {{- $siteSecret := include "aypex.resourceName" (dict "ctx" . "suffix" "site") -}}
+{{- $migrateRegistry := .Values.jobs.payloadMigrate.image.registry | default .Values.site.image.registry -}}
+{{- $migrateRepo := .Values.jobs.payloadMigrate.image.repository | default .Values.site.image.repository -}}
 {{- $migrateTag := .Values.jobs.payloadMigrate.image.tag | default .Values.images.site -}}
-{{- $name := printf "%s-payload-migrate-%s" .Release.Name ($migrateTag | sha256sum | trunc 8) -}}
+{{- $migrateImage := printf "%s/%s:%s" $migrateRegistry $migrateRepo $migrateTag -}}
+{{- /*
+Hash the WHOLE image reference, not just the tag.
+A Job is immutable and this one is a Helm hook, which ArgoCD does not track for
+drift -- so if two different renders produce the same NAME, the first one applied
+wins forever and the second is silently never created. Hashing the tag alone did
+exactly that when the Job moved from the site image to the dedicated migrate
+image at the same tag: the failed site-image Job kept the name, and the correct
+one could never take it.
+*/ -}}
+{{- $name := printf "%s-payload-migrate-%s" .Release.Name ($migrateImage | sha256sum | trunc 8) -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -49,7 +61,7 @@ spec:
                  standalone output carries `payload` pruned, so the CLI cannot
                  run from the serving image at all. Falls back to the site image
                  for a consumer that has not built one. */}}
-          image: {{ .Values.jobs.payloadMigrate.image.registry | default .Values.site.image.registry }}/{{ .Values.jobs.payloadMigrate.image.repository | default .Values.site.image.repository }}:{{ .Values.jobs.payloadMigrate.image.tag | default .Values.images.site }}
+          image: {{ $migrateImage }}
           command:
             - ./node_modules/.bin/payload
             - migrate
