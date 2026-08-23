@@ -1,7 +1,8 @@
 {{- if and .Values.jobs.payloadMigrate.enabled .Values.images.site }}
 {{- $payloadDb := include "aypex.resourceName" (dict "ctx" . "suffix" "payload-db") -}}
 {{- $siteSecret := include "aypex.resourceName" (dict "ctx" . "suffix" "site") -}}
-{{- $name := printf "%s-payload-migrate-%s" .Release.Name (.Values.images.site | sha256sum | trunc 8) -}}
+{{- $migrateTag := .Values.jobs.payloadMigrate.image.tag | default .Values.images.site -}}
+{{- $name := printf "%s-payload-migrate-%s" .Release.Name ($migrateTag | sha256sum | trunc 8) -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -44,7 +45,11 @@ spec:
           emptyDir: {}
       containers:
         - name: migrate
-          image: {{ .Values.site.image.registry }}/{{ .Values.site.image.repository }}:{{ .Values.images.site }}
+          {{- /* The migrate image is SEPARATE from the site image: Next's
+                 standalone output carries `payload` pruned, so the CLI cannot
+                 run from the serving image at all. Falls back to the site image
+                 for a consumer that has not built one. */}}
+          image: {{ .Values.jobs.payloadMigrate.image.registry | default .Values.site.image.registry }}/{{ .Values.jobs.payloadMigrate.image.repository | default .Values.site.image.repository }}:{{ .Values.jobs.payloadMigrate.image.tag | default .Values.images.site }}
           command:
             - ./node_modules/.bin/payload
             - migrate

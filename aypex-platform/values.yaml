@@ -180,6 +180,16 @@ jobs:
   payloadMigrate:
     enabled: true
     backoffLimit: 3
+    ## A SEPARATE image from the site. Next's standalone output carries
+    ## `payload` pruned -- the package directory is present but its
+    ## package.json and bin are not -- so `payload migrate` cannot run from the
+    ## serving image at any path. Shipping the full tree in the site image
+    ## instead would inflate every storefront pod for a Job that runs once per
+    ## deploy. Leave empty to fall back to the site image.
+    image:
+      registry: ""
+      repository: ""
+      tag: ""
     ## Reap finished Jobs. The Job is hash-named by site image, and
     ## hook-delete-policy only removes a SAME-named hook, so every bump would
     ## otherwise orphan the previous one. 1h, not rails-task's 600s: long
