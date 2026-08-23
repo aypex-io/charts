@@ -1,0 +1,139 @@
+{{- $ns := include "aypex.namespace" . -}}
+{{- $release := .Release.Name -}}
+{{- /*
+HTTPRoute NAMES keep the release prefix: these objects live in the SHARED
+gateway namespace, where every brand and env coexist, so `tech-stg-admin` must
+not collide with anything else. Their backendRefs point INTO this brand's own
+namespace, where the namespace itself provides isolation, so those are
+unprefixed (web / site).
+
+Each route binds ONLY the listener its own hostname intersects. Listing every
+listener on every route leaves parentRefs reporting NoMatchingListenerHostname,
+which is easy to miss because the other listener still serves traffic.
+*/ -}}
+---
+{{- /* The public site. Everything is Next.js EXCEPT the two prefixes Rails
+       must serve itself. */}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-site
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "aypex.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.site | default .Values.gateway.sectionNames.default) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    {{- if kindIs "slice" .Values.hostnames.site }}
+    {{- range .Values.hostnames.site }}
+    - {{ . | quote }}
+    {{- end }}
+    {{- else }}
+    - {{ .Values.hostnames.site | quote }}
+    {{- end }}
+  rules:
+    {{- /* Spree serves product images through Active Storage proxy URLs and its
+           own asset pipeline, streaming them from S3. Those paths are on the
+           STOREFRONT host because that is the host in the image URL, so they
+           must reach `web` -- send them to the Next.js app and every product
+           image 404s. The more specific path match wins. */}}
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /rails/active_storage
+        - path:
+            type: PathPrefix
+            value: /assets
+      backendRefs:
+        - name: web
+          namespace: {{ $ns }}
+          port: 80
+    - backendRefs:
+        - name: site
+          namespace: {{ $ns }}
+          port: 80
+---
+{{- /* Store API. */}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-api
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "aypex.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.api | default .Values.gateway.sectionNames.default) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.api | quote }}
+  rules:
+    - backendRefs:
+        - name: web
+          namespace: {{ $ns }}
+          port: 80
+---
+{{- /* Spree's own admin. Behind Cloudflare Access. */}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-admin
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "aypex.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.admin | default .Values.gateway.sectionNames.default) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.admin | quote }}
+  rules:
+    - backendRefs:
+        - name: web
+          namespace: {{ $ns }}
+          port: 80
+{{- if .Values.hostnames.cms }}
+---
+{{- /* The PAYLOAD admin, which lives inside the same Next.js app as the public
+       site and therefore on the same Service.
+       It gets its own hostname rather than a path on the public one because
+       Spree's admin already occupies /admin on the admin host, and because a
+       separate host is what Cloudflare Access can be pointed at. The app's
+       middleware 404s /admin and /api/[...slug] on any other host, so this
+       route is the only way in -- belt and braces with the edge policy.
+       Only these prefixes are routed; anything else here is a gateway 404. */}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $release }}-cms
+  namespace: {{ .Values.gateway.namespace }}
+  labels: {{- include "aypex.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    {{- range (.Values.gateway.sectionNames.cms | default .Values.gateway.sectionNames.default) }}
+    - name: {{ $.Values.gateway.name }}
+      sectionName: {{ . }}
+    {{- end }}
+  hostnames:
+    - {{ .Values.hostnames.cms | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /admin
+        - path:
+            type: PathPrefix
+            value: /api
+        - path:
+            type: PathPrefix
+            value: /_next
+      backendRefs:
+        - name: site
+          namespace: {{ $ns }}
+          port: 80
+{{- end }}

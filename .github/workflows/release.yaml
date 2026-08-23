@@ -8,6 +8,7 @@ on:
       - "nextjs-v*"
       - "spree-platform-v*"
       - "revue-platform-v*"
+      - "aypex-platform-v*"
 
 permissions:
   contents: read

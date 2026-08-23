@@ -1,0 +1,79 @@
+{{- if and .Values.jobs.payloadMigrate.enabled .Values.images.site }}
+{{- $payloadDb := include "aypex.resourceName" (dict "ctx" . "suffix" "payload-db") -}}
+{{- $siteSecret := include "aypex.resourceName" (dict "ctx" . "suffix" "site") -}}
+{{- $name := printf "%s-payload-migrate-%s" .Release.Name (.Values.images.site | sha256sum | trunc 8) -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "aypex.namespace" . }}
+  labels: {{- include "aypex.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.jobs.payloadMigrate.backoffLimit }}
+  {{- /*
+  Reap finished Jobs. Without this they accumulate forever: the Job name carries
+  a hash of the site image, and `hook-delete-policy: before-hook-creation` only
+  deletes a hook of the SAME name — so every image bump leaves the previous Job
+  behind. tkf-stg had 17 of them going back 65 days before this was added.
+  rails-task (migrate/seed/rake) has always defaulted ttlSecondsAfterFinished to
+  600; this Job is hand-written here and simply never got the same treatment.
+
+  Consequence to be aware of: once the TTL reaps a Job, a later sync with an
+  UNCHANGED image will recreate and re-run it, because the hash-named Job no
+  longer exists. That is safe — Payload tracks applied migrations in the database
+  and a re-run is a no-op ("Done." with no "Migrating:" lines) — and it is the
+  same behaviour rails-task has had all along. 1h rather than rails-task's 10min
+  so the logs survive long enough to read after a deploy.
+  */}}
+  ttlSecondsAfterFinished: {{ .Values.jobs.payloadMigrate.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels: {{- include "aypex.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      containers:
+        - name: migrate
+          image: {{ .Values.site.image.registry }}/{{ .Values.site.image.repository }}:{{ .Values.images.site }}
+          command:
+            - ./node_modules/.bin/payload
+            - migrate
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          env:
+            - name: NODE_ENV
+              value: production
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $payloadDb }}
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $payloadDb }}
+                  key: password
+            - name: DATABASE_URI
+              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@{{ .Values.cnpg.name }}-rw:5432/payload"
+          envFrom:
+            - secretRef:
+                name: {{ $siteSecret }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
+{{- end }}
