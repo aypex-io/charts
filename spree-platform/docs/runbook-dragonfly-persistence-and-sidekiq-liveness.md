@@ -75,6 +75,20 @@ redisQueue:
    ```
 2. **`--dbfilename` with no `{timestamp}`** → a single overwriting `dump`, so startup
    loads a deterministic file and snapshots don't accumulate.
+   **This regressed in the operator rewrite and cost an outage.** The operator
+   supplies `--dir` and `--snapshot_cron` but *not* `--dbfilename`, and the
+   binary's default is `dump-{timestamp}` (`dragonfly --helpfull`) — so every
+   cron tick wrote a new file and nothing pruned them; there is no retention
+   flag. `aypex-tech-stg` filled its 2Gi queue PVC on 2026-08-30 (2062 files)
+   and then failed *every* snapshot for 11 days, leaving the queue effectively
+   unpersisted. Restored in aypex-platform 0.1.4 / spree-platform 1.2.4. When
+   auditing a tenant, `ls /dragonfly/snapshots` should show ONE `dump-*.dfs`
+   set, not a timestamped series:
+   ```bash
+   kubectl -n <ns> exec redis-queue-0 -c dragonfly -- ls /dragonfly/snapshots
+   ```
+   Note the fix stops the growth but does **not** reclaim already-accumulated
+   files — delete them (or the PVC, at idle) once the fixed chart is deployed.
 3. **`--shard_round_robin_prefix` is deprecated** (Dragonfly v1.39: "deprecated and
    will be removed"). Don't add it; default hash sharding is fine.
 4. **`ceph-block-r1` is size-1** (no storage replication) — durability is the snapshot

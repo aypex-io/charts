@@ -41,6 +41,17 @@ spec:
     - --logtostderr
     - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
     - --version_check=false
+    # Dragonfly's --dbfilename DEFAULTS to "dump-{timestamp}", so every cron
+    # snapshot lands in a NEW file and nothing ever prunes them: there is no
+    # retention flag in the binary. aypex-tech-stg filled its 2Gi queue PVC
+    # this way on 2026-08-30 (2062 files) and then failed every snapshot for
+    # 11 days -- "Failed to perform snapshot No space left on device" -- so a
+    # pod restart would have silently dropped the whole Sidekiq queue.
+    # A fixed name means ONE overwriting dump set, which is also what startup
+    # deterministically reloads. See the runbook's pitfall #2; the operator
+    # rewrite dropped this arg because the hand-rolled Deployment used to
+    # carry it. The operator supplies --dir, so only the name is needed here.
+    - --dbfilename=dump
   snapshot:
     cron: {{ .Values.redisQueue.persistence.snapshotCron | quote }}
     persistentVolumeClaimSpec:
