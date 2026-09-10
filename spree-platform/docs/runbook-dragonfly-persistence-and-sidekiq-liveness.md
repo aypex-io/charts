@@ -88,7 +88,20 @@ redisQueue:
    kubectl -n <ns> exec redis-queue-0 -c dragonfly -- ls /dragonfly/snapshots
    ```
    Note the fix stops the growth but does **not** reclaim already-accumulated
-   files — delete them (or the PVC, at idle) once the fixed chart is deployed.
+   files — delete them (or the PVC, at idle) once the fixed chart is deployed,
+   and read pitfall #6 first: clearing this store has a side effect that is not
+   obvious. Prefer deleting the stale files in place over deleting the PVC. Use
+   `find -delete`, NOT a shell glob — a tenant carrying tens of thousands of
+   files blows past `ARG_MAX` and `rm dump-20*.dfs` fails outright:
+   ```bash
+   kubectl -n <ns> exec redis-queue-0 -c dragonfly -- \
+     find /dragonfly/snapshots -maxdepth 1 -name 'dump-20*.dfs' -delete
+   ```
+   Only run that once the pod is on the fixed chart and has written its own
+   `dump-summary.dfs` — otherwise it deletes the only restore point. Beyond
+   reclaiming space this matters for correctness: every start logs `Load
+   snapshot: Searching for snapshot in directory`, and leaving ~32k stale
+   candidates in that search is a restore-the-wrong-queue risk.
 3. **`--shard_round_robin_prefix` is deprecated** (Dragonfly v1.39: "deprecated and
    will be removed"). Don't add it; default hash sharding is fine.
 4. **`ceph-block-r1` is size-1** (no storage replication) — durability is the snapshot
@@ -96,6 +109,28 @@ redisQueue:
 5. **RollingUpdate→Recreate is patchable** (a normal apply handles it); the tkf stg
    "stuck sync" was actually pitfall #1, not the strategy change. No `Replace=true`
    annotation needed.
+6. **Wiping this store also wipes the sidekiq-cron schedule — restart the worker.**
+   `sidekiq-cron` keeps its registry *in Redis* (`cron_jobs:<queue>`,
+   `cron_job:<queue>:<name>`), and the chart registers it only from
+   `Sidekiq.configure_server` at worker **startup**. So deleting the PVC (or
+   `FLUSHDB`) silently unschedules every recurring job, and the worker will not
+   re-register on its own: it just reconnects ("Redis is online, N sec downtime")
+   and carries on with nothing to enqueue. Nothing alerts on this — the worker is
+   Ready, the queue is healthy, and the jobs simply never run.
+   Hit on `aypex-tech-stg` 2026-09-10: clearing the full PVC stopped
+   `Spree::StockReservations::ExpireJob`, which Spree 5.5+ needs ~every minute or
+   expired holds accumulate and keep suppressing available stock.
+   After any destructive action on the queue store:
+   ```bash
+   kubectl -n <ns> rollout restart deploy/worker
+   kubectl -n <ns> exec redis-queue-0 -c dragonfly -- redis-cli -p 9999 -n 0 --scan | grep cron_job
+   ```
+   Checking the job queues are idle (the cutover advice below) is necessary but
+   NOT sufficient — `queue:*`, `schedule`, `retry` and `dead` can all read zero
+   while the cron registry is exactly what you are about to destroy.
+   A *routine* pod roll is safe: the snapshot reloads the registry, which is
+   precisely what the persistence in Part 1 buys you. Only wiping the volume
+   loses it.
 
 ### Verify — the pod-delete survival test
 Graceful delete = SIGTERM → snapshot-on-shutdown → new pod reloads from the PVC.
