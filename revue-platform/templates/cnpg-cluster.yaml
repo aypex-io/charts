@@ -8,6 +8,12 @@ spec:
   instances: {{ .Values.cnpg.instances }}
   imageName: {{ .Values.cnpg.imageName }}
   primaryUpdateStrategy: unsupervised
+  # Promote an already-updated replica, then restart the old primary as a
+  # replica. CNPG's default (`restart`) restarts the primary IN PLACE on an
+  # image/config change — revue-prd was write-unavailable ~3.5 min that way on
+  # 2026-09-12. With switchover the write gap is seconds. Single-instance
+  # clusters (stg) have no replica and still restart in place.
+  primaryUpdateMethod: switchover
   enableSuperuserAccess: false
   minSyncReplicas: 0
   maxSyncReplicas: {{ .Values.cnpg.maxSyncReplicas }}
