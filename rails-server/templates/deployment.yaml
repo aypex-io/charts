@@ -21,8 +21,36 @@ spec:
         {{- if .Values.podLabels }}
         {{- include "common.tplvalues.render" (dict "value" .Values.podLabels "context" $) | nindent 8 }}
         {{- end }}
-      {{- if .Values.podAnnotations }}
-      annotations: {{- include "common.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 8 }}
+      {{- /*
+        checksum/config rolls the pods when the chart-owned ConfigMap's data
+        changes. This is load-bearing: `envFrom: configMapRef` does NOT
+        propagate ConfigMap edits to running pods. Without it a values-only
+        config change silently never lands — the ConfigMap updates, ArgoCD
+        reports Synced and Healthy, and the pods keep serving the old values
+        until something unrelated happens to restart them.
+
+        That is not hypothetical: tkf-prd's storefront ran for three weeks with
+        NEXT_PUBLIC_SITE_URL still pointing at the retired prd.tongkatfitness.com
+        after the cutover changed it, because nothing ever rolled the pods.
+
+        Hashes .Values.configmap.data ONLY — not the rendered ConfigMap file.
+        The rendered file carries standard labels including the chart version,
+        so hashing it would roll every pod on an unrelated chart bump. Only a
+        real config change should cost a restart.
+
+        SCOPE: covers the ConfigMap this chart renders. It cannot cover
+        .Values.extraEnvVarsCM / .Values.extraEnvVarsSecret — those name objects
+        owned elsewhere (ESO, another chart), whose contents are unknowable at
+        template time. Changes to those still need a manual roll.
+      */}}
+      {{- if or .Values.podAnnotations .Values.configmap.create }}
+      annotations:
+        {{- if .Values.configmap.create }}
+        checksum/config: {{ toYaml .Values.configmap.data | sha256sum }}
+        {{- end }}
+        {{- if .Values.podAnnotations }}
+        {{- include "common.tplvalues.render" (dict "value" .Values.podAnnotations "context" $) | nindent 8 }}
+        {{- end }}
       {{- end }}
     spec:
       serviceAccountName: {{ include "rails-server.serviceAccountName" . }}
