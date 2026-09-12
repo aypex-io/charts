@@ -1,0 +1,69 @@
+{{- /*
+Lets the metrics scraper reach the Dragonfly pods.
+
+WHY THIS IS NEEDED. The Dragonfly CR sets networkPolicyEnabled: true, so the
+operator generates a NetworkPolicy per instance that allows ONLY:
+
+  * port 6379 from `podSelector: {}`  — any pod in the SAME namespace
+  * port 9999 from the operator's controller-manager + sibling dragonfly pods
+
+Alloy runs in another namespace, so it is denied on both ports. That — not the
+Dragonfly config — is why annotating the pods for scraping produced up=0 on
+every target twice over (1.2.6 on :9999, 1.2.7 on :6379). Confirmed from inside
+a same-namespace pod: 6379 CONNECTED, 9999 BLOCKED (ETIMEDOUT), exactly as the
+operator's policy is written.
+
+NetworkPolicies are additive — the union of all policies selecting a pod is
+allowed — so this grants one narrow extra ingress and leaves the operator's
+policy untouched. Do NOT "fix" this by setting networkPolicyEnabled: false:
+these instances set no requirepass, so that policy is the only thing stopping
+any pod in the cluster from issuing FLUSHALL.
+
+WHY PORT 6379 AND NOT THE ADMIN PORT. A policy change is required either way,
+so the choice is purely about what gets exposed to `obs`. The admin port runs
+with --admin_nopass and is a strict superset of 6379's capabilities (admin
+commands, exempt from maxclients). 6379 is the data port, which every pod in
+the namespace can already reach. Widening the smaller surface by one namespace
+beats opening the larger one, so the chart serves /metrics on 6379 via
+--primary_port_http_enabled=true and scrapes there.
+*/}}
+{{- /*
+Default OFF and nil-safe: the chart renders identically when
+dragonfly.metricsNetworkPolicy is absent. Opt in per-consumer by setting
+`dragonfly.metricsNetworkPolicy.enabled: true` — see values.yaml.
+*/}}
+{{- $np := .Values.dragonfly.metricsNetworkPolicy | default dict }}
+{{- if and .Values.dragonfly.podAnnotations $np.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dragonfly-metrics-scrape
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  {{- /*
+  Selects every instance at once (queue, cache, cable) rather than one policy
+  each — the operator already emits a per-instance policy, and this only ever
+  adds the same single rule.
+  */}}
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dragonfly
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.scraperNamespace | default "obs" }}
+          podSelector:
+            matchLabels: {{- toYaml ($np.scraperPodLabels | default (dict "app.kubernetes.io/name" "alloy")) | nindent 14 }}
+      ports:
+        {{- /*
+        Derived from the scrape annotation so the two can never disagree — a
+        policy opening a different port than the one Alloy is told to hit is
+        exactly the silent failure this file exists to fix.
+        */}}
+        - port: {{ index .Values.dragonfly.podAnnotations "prometheus.io/port" | default "6379" | int }}
+          protocol: TCP
+{{- end }}
