@@ -120,19 +120,21 @@ cnpg:
   ## don't depend on postInitSQL (which doesn't run during recovery-from-backup).
   databases: []          # tenant base overlay — see customers/tkf/base/values.yaml
 
-## @section Dragonfly engine image (shared by all redis-* instances below)
-## Every redis-{queue,cache,cable} instance runs the same Dragonfly build; the
-## image lives here once and the three instance blocks reference it.
+## @section Dragonfly shared settings
+## NOTE: `dragonfly.image` below is NOT read by any template — each redis-{queue,
+## cache,cable} block carries its own `image`. Keep all four tags in lockstep.
 dragonfly:
   image:
-    # docker.dragonflydb.io IS the registry; previous values doubled it up
-    # under docker.io which resolved to a non-existent docker.io image.
-    registry: docker.dragonflydb.io
+    # ghcr.io is the real registry: docker.dragonflydb.io is a front for it
+    # (same digests; its token realm is ghcr.io), and N27a containerd already
+    # authenticates to ghcr.io, so pulls aren't anonymous/rate-limited.
+    registry: ghcr.io
     repository: dragonflydb/dragonfly
     # Pinned for reproducibility — `latest` lets a pod reschedule silently pull a
-    # new Dragonfly major. v1.39.0 is the build prd has been running (and clears
-    # the v1.13+ floor for --shard_round_robin_prefix). Bump deliberately.
-    tag: v1.39.0
+    # new Dragonfly major. Bump deliberately. v1.40+ writes snapshots/replication
+    # in "tagged chunk" format that only v1.39+ can load — never roll back below
+    # v1.39.0 after running v1.40.
+    tag: v1.40.2
 
   ## Prometheus scrape annotations, applied to every redis-* pod. Alloy's
   ## annotation job (gitops-obs base/helm/alloy) keeps pods with
@@ -174,11 +176,11 @@ redisQueue:
   # PVC and handles master election, so the old `replicas: 1` + `Recreate`
   # workaround for a shared RWO volume is gone.
   image:
-    registry: docker.dragonflydb.io
+    registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.39.0
-  # Single master only — see redis-queue.yaml. replicaCount is retained for
-  # back-compat but IGNORED by the template (the RWO PVC enforces one pod).
+    tag: v1.40.2
+  # Operator-managed replica count (templates/dragonfly.yaml); >1 adds replicas
+  # with their own PVCs and master failover. tkf overlays run 3.
   replicaCount: 1
   proactorThreads: 2
   # Snapshot persistence so a pod restart doesn't drop queued/scheduled/retry
@@ -211,9 +213,9 @@ redisQueue:
 redisCable:
   enabled: true
   image:
-    registry: docker.dragonflydb.io
+    registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.39.0
+    tag: v1.40.2
   replicaCount: 1
   proactorThreads: 1
   resources:
@@ -236,13 +238,12 @@ redisCable:
 redisCache:
   enabled: true
   image:
-    registry: docker.dragonflydb.io
+    registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.39.0
+    tag: v1.40.2
   replicaCount: 1
   # Two proactor threads now that both the storefront and Rails share it.
   proactorThreads: 2
-  # Image reused from .Values.dragonfly.image (same Dragonfly build).
   # Eviction ceiling — held at ~75% of the container memory limit so Dragonfly's
   # own per-shard bookkeeping has headroom before the cgroup OOM-kills it.
   maxmemory: 576mb

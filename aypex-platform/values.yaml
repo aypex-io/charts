@@ -92,7 +92,7 @@ dragonfly:
   image:
     registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.36.0
+    tag: v1.40.2
 
   ## Prometheus scrape annotations, applied to every redis-* pod. Alloy's
   ## annotation job (gitops-obs base/helm/alloy) keeps pods with
@@ -155,7 +155,7 @@ redisQueue:
   image:
     registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.36.0
+    tag: v1.40.2
   persistence:
     storageClass: ceph-block
     size: 2Gi
@@ -172,7 +172,7 @@ redisCache:
   image:
     registry: ghcr.io
     repository: dragonflydb/dragonfly
-    tag: v1.36.0
+    tag: v1.40.2
   resources: {}
 
 ## @section ExternalSecrets
