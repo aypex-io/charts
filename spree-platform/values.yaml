@@ -128,6 +128,22 @@ dragonfly:
     # the v1.13+ floor for --shard_round_robin_prefix). Bump deliberately.
     tag: v1.39.0
 
+  ## Prometheus scrape annotations, applied to every redis-* pod. Alloy's
+  ## annotation job (gitops-obs base/helm/alloy) keeps pods with
+  ## prometheus.io/scrape="true" and rewrites the target to
+  ## pod_ip:prometheus.io/port, defaulting the path to /metrics.
+  ##
+  ## Port 9999 is the ADMIN port, deliberately: the operator passes
+  ## --primary_port_http_enabled=false, so 6379 serves no HTTP and therefore no
+  ## /metrics. 9999 is a declared containerPort, so Alloy's address rewrite works.
+  ##
+  ## This was the missing half of the Dragonfly dashboard: it landed in
+  ## gitops-obs #28 and was refined in #30, but nothing ever scraped Dragonfly,
+  ## so every panel had been empty since it shipped. Set to {} to disable.
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9999"
+
 ## @section Redis queue Dragonfly (Sidekiq job queues)
 ## Persistent store for Sidekiq queues (REDIS_URL=…/0 on web + worker). Runs
 ## WITHOUT eviction (Dragonfly OOMs when full) because losing a queued/in-flight

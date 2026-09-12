@@ -55,6 +55,17 @@ spec:
   replicas: {{ .Values.redisQueue.replicaCount }}
   serviceSpec:
     name: redis-queue
+  {{- /*
+  Prometheus scrape. The metrics endpoint is on the ADMIN port, not 6379: the
+  operator sets --primary_port_http_enabled=false, so there is no HTTP (and no
+  /metrics) on the redis port. Alloy's annotation job keys on
+  prometheus.io/scrape and rewrites the target to pod_ip:prometheus.io/port,
+  defaulting the path to /metrics — which is what Dragonfly serves.
+  */}}
+  {{- with .Values.dragonfly.podAnnotations }}
+  podMetadata:
+    annotations: {{- toYaml . | nindent 6 }}
+  {{- end }}
   args:
     - --logtostderr
     - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
@@ -120,6 +131,17 @@ spec:
   replicas: {{ .Values.redisCache.replicaCount }}
   serviceSpec:
     name: redis-cache
+  {{- /*
+  Prometheus scrape. The metrics endpoint is on the ADMIN port, not 6379: the
+  operator sets --primary_port_http_enabled=false, so there is no HTTP (and no
+  /metrics) on the redis port. Alloy's annotation job keys on
+  prometheus.io/scrape and rewrites the target to pod_ip:prometheus.io/port,
+  defaulting the path to /metrics — which is what Dragonfly serves.
+  */}}
+  {{- with .Values.dragonfly.podAnnotations }}
+  podMetadata:
+    annotations: {{- toYaml . | nindent 6 }}
+  {{- end }}
   args:
     - --logtostderr
     - --proactor_threads={{ .Values.redisCache.proactorThreads }}
