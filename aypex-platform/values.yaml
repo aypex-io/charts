@@ -93,16 +93,28 @@ dragonfly:
   ## prometheus.io/scrape="true" and rewrites the target to
   ## pod_ip:prometheus.io/port, defaulting the path to /metrics.
   ##
-  ## Port 9999 is the ADMIN port, deliberately: the operator passes
-  ## --primary_port_http_enabled=false, so 6379 serves no HTTP and therefore no
-  ## /metrics. 9999 is a declared containerPort, so Alloy's address rewrite works.
+  ## Port 6379 — the redis port, which the instance args re-enable HTTP on via
+  ## --primary_port_http_enabled=true (the operator hardcodes it false).
+  ##
+  ## NOT the admin port 9999, which 0.1.7 tried and which cannot work:
+  ## --admin_bind defaults to "" so the admin console binds LOOPBACK ONLY.
+  ## Alloy scrapes pod_ip:port, so all 12 targets sat at up=0. (A
+  ## `kubectl port-forward` test passes regardless, because it connects via the
+  ## pod's own loopback — that is what hid the bug.)
+  ##
+  ## Opening it with --admin_bind=0.0.0.0 would be strictly worse: that console
+  ## runs with --admin_nopass, so it would expose an unauthenticated admin
+  ## surface cluster-wide. By contrast these instances set no requirepass
+  ## (spec.authentication is empty; the app connects as redis://redis-queue:6379),
+  ## so 6379 ALREADY grants unauthenticated RESP — FLUSHALL included — to
+  ## anything that can reach it. Serving /metrics there widens no trust boundary.
   ##
   ## This was the missing half of the Dragonfly dashboard: it landed in
   ## gitops-obs #28 and was refined in #30, but nothing ever scraped Dragonfly,
   ## so every panel had been empty since it shipped. Set to {} to disable.
   podAnnotations:
     prometheus.io/scrape: "true"
-    prometheus.io/port: "9999"
+    prometheus.io/port: "6379"
 
   ## The operator's default pod does not satisfy PodSecurity `restricted`, so in
   ## a restricted namespace the StatefulSet is created and every pod is refused
