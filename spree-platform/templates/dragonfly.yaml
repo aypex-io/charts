@@ -52,6 +52,12 @@ spec:
     - --logtostderr
     - --proactor_threads={{ .Values.redisQueue.proactorThreads }}
     - --version_check=false
+    # Serve /metrics on the redis port. The operator hardcodes
+    # --primary_port_http_enabled=false in its own args; ours are appended after
+    # its, and gflags takes the LAST occurrence, so this re-enables it.
+    # Deliberately NOT the admin port -- see dragonfly.podAnnotations in
+    # values.yaml for why that cannot be scraped.
+    - --primary_port_http_enabled=true
     # Dragonfly's --dbfilename DEFAULTS to "dump-{timestamp}", so every cron
     # snapshot lands in a NEW file and nothing ever prunes them: there is no
     # retention flag in the binary. aypex-tech-stg filled its 2Gi queue PVC
@@ -124,6 +130,12 @@ spec:
     - --cache_mode=true
     - --maxmemory={{ .Values.redisCache.maxmemory }}
     - --version_check=false
+    # Serve /metrics on the redis port. The operator hardcodes
+    # --primary_port_http_enabled=false in its own args; ours are appended after
+    # its, and gflags takes the LAST occurrence, so this re-enables it.
+    # Deliberately NOT the admin port -- see dragonfly.podAnnotations in
+    # values.yaml for why that cannot be scraped.
+    - --primary_port_http_enabled=true
   resources: {{- toYaml .Values.redisCache.resources | nindent 4 }}
 {{- end }}
 
@@ -161,5 +173,11 @@ spec:
     - --logtostderr
     - --proactor_threads={{ .Values.redisCable.proactorThreads }}
     - --version_check=false
+    # Serve /metrics on the redis port. The operator hardcodes
+    # --primary_port_http_enabled=false in its own args; ours are appended after
+    # its, and gflags takes the LAST occurrence, so this re-enables it.
+    # Deliberately NOT the admin port -- see dragonfly.podAnnotations in
+    # values.yaml for why that cannot be scraped.
+    - --primary_port_http_enabled=true
   resources: {{- toYaml .Values.redisCable.resources | nindent 4 }}
 {{- end }}
