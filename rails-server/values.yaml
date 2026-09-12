@@ -21,7 +21,11 @@ extraDeploy: []
 image:
   registry: docker.io
   repository: ruby
-  tag: "3.4-slim"
+  # Exact fallback tag (was floating 3.4-slim); overlays always set their own image. Kept
+  # tag-only on purpose: common.images.image renders digest INSTEAD of tag,
+  # so a default digest here would be inherited by every overlay that only
+  # sets registry/repository/tag and pin their app image to this base digest.
+  tag: "3.4.10-slim"
   digest: ""
   pullPolicy: IfNotPresent
   pullSecrets: []
