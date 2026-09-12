@@ -61,7 +61,13 @@ gateway:
 cnpg:
   name: ""               # tenant base overlay — typically "<slug>-db"
   instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:18
+  # Pinned by digest: the bare `:18` tag floated (a pod reschedule could pull a new
+  # minor mid-cluster). This is CNPG's DEPRECATED `system` image on Debian
+  # bullseye — the flavour we were already running — kept so the pin changes no
+  # OS/glibc/barman tooling. CNPG no longer publishes bullseye builds; moving to
+  # `standard-trixie` is a separate change (verify datcollate first; anything that
+  # shells out to barman-cloud-* needs a `system` image).
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.6@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533
   storageSize: 20Gi
   walStorageSize: 5Gi
   storageClass: ceph-block-r1
