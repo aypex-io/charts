@@ -14,6 +14,13 @@ spec:
   # 2026-09-12. With switchover the write gap is seconds. Single-instance
   # clusters (stg) have no replica and still restart in place.
   primaryUpdateMethod: switchover
+  # A single-instance cluster (every stg) has no replica to switch over to, so
+  # CNPG's `<cluster>-primary` PDB (minAvailable 1) allows 0 disruptions and
+  # blocks node drains forever — it stalled the Talos v1.13.10 roll on
+  # talos-mfm-260 for 1h+ on 2026-09-13. Disable the PDB when instances == 1
+  # (CNPG recommends this for dev/staging); keep it for replicated clusters,
+  # where CNPG switches the primary away from a draining node.
+  enablePDB: {{ gt (int .Values.cnpg.instances) 1 }}
   enableSuperuserAccess: false
   minSyncReplicas: 0
   maxSyncReplicas: {{ .Values.cnpg.maxSyncReplicas }}
