@@ -279,11 +279,15 @@ typesense:
   image:
     registry: docker.io
     repository: typesense/typesense
-    # PINNED to a full MAJOR.MINOR.PATCH. Kept as history because it is the
-    # reason for this rule: a floating minor tag on the previous search engine
+    # PINNED by digest. Typesense publishes MAJOR.MINOR tags only (no patch
+    # level), so `30.2` on its own is still a mutable tag. The digest makes the
+    # pull immutable; the `30.2@` prefix is kept so the version stays readable.
+    # Why this matters: a floating minor tag on the previous search engine
     # silently resolved to a build that refused to open its own on-disk database
-    # and took prd search down on 2026-08-02. Never float this.
-    tag: "30.2"
+    # and took prd search down on 2026-08-02. Never float this. When bumping,
+    # change the tag AND the digest together (multi-arch index digest from
+    # `docker buildx imagetools inspect docker.io/typesense/typesense:<tag>`).
+    tag: "30.2@sha256:610f2d34b1f93d00762869da2c67736775e5798d19a2c8b91b014b8a0cc1e110"
   persistence:
     size: 10Gi
     # size-3 pool. NEVER ceph-block-r1 — that pool is size 1 min_size 1, and a
