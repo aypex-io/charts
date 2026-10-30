@@ -46,13 +46,19 @@ Application permanently OutOfSync.
 | Host | Backend |
 |---|---|
 | `hostnames.site` (may be a list) | `/rails/active_storage` + `/assets` → `web`; everything else → `site` |
-| `hostnames.api` | `web` |
+| `hostnames.api` | `web`, only `/api/v3/store`, `/api/v3/webhooks`, `/up` |
 | `hostnames.admin` | `web` (Spree's dashboard + Admin API, behind Cloudflare Access) |
 | `hostnames.cms` | `site`, only `/admin`, `/api`, `/_next` (Payload admin) |
 
 Spree streams product images from S3 through Active Storage proxy URLs, and
 those URLs are on the **storefront** host — so those prefixes must reach `web`
 or every product image 404s.
+
+The api host carries only what a public API host needs. `web` also serves the
+dashboard, the Admin API, the seller panel and the OAuth server, and routing
+all of it there would publish the admin surface a second time, outside the
+admin host's edge policy. The storefront never uses this host: it calls `web`
+in-cluster.
 
 `hostnames.cms` is separate from `hostnames.admin` because Payload needs `/admin`
 and `/api`, and on the admin host `/api` is Spree's — the dashboard calls the
