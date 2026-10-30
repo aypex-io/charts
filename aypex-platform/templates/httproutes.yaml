@@ -77,7 +77,8 @@ spec:
           namespace: {{ $ns }}
           port: 80
 ---
-{{- /* Spree's own admin. Behind Cloudflare Access. */}}
+{{- /* Spree's admin: the React dashboard at /dashboard and the Admin API it
+       calls, same-origin, under /api/v3/admin. Behind Cloudflare Access. */}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -101,9 +102,10 @@ spec:
 ---
 {{- /* The PAYLOAD admin, which lives inside the same Next.js app as the public
        site and therefore on the same Service.
-       It gets its own hostname rather than a path on the public one because
-       Spree's admin already occupies /admin on the admin host, and because a
-       separate host is what Cloudflare Access can be pointed at. The app's
+       It gets its own hostname rather than a path on the admin one because
+       Payload needs /admin and /api, and on the admin host /api is Spree's: its
+       dashboard calls the Admin API there, same-origin. A separate host is also
+       what Cloudflare Access can be pointed at. The app's
        middleware 404s /admin and /api/[...slug] on any other host, so this
        route is the only way in -- belt and braces with the edge policy.
        Only these prefixes are routed; anything else here is a gateway 404. */}}
