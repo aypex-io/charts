@@ -56,7 +56,15 @@ spec:
           namespace: {{ $ns }}
           port: 80
 ---
-{{- /* Store API. */}}
+{{- /* Store API. `web` also serves the dashboard, the Admin API, the seller
+       panel and the OAuth server, and all of those belong on the admin host.
+       Routing the whole of `web` here published them a second time, on a host
+       the admin's edge policy does not cover. So this route carries ONLY the
+       prefixes a public API host needs: the Store API, the payment and
+       fulfilment webhooks providers call back on, and /up. Anything else here
+       is a gateway 404.
+       The storefront itself never comes this way. It calls `web` in-cluster,
+       and product image URLs are built on the storefront host (see above). */}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -72,7 +80,17 @@ spec:
   hostnames:
     - {{ .Values.hostnames.api | quote }}
   rules:
-    - backendRefs:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v3/store
+        - path:
+            type: PathPrefix
+            value: /api/v3/webhooks
+        - path:
+            type: Exact
+            value: /up
+      backendRefs:
         - name: web
           namespace: {{ $ns }}
           port: 80
