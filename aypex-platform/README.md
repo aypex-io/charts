@@ -1,8 +1,9 @@
 # aypex-platform
 
 Umbrella chart for **aypex.tech**, Aypex's own-brand storefront. A single brand
-(not a per-customer fan-out): one Rails image runs as `web` (Puma — Spree admin
-and Store API v3) and `worker` (Sidekiq), with `migrate` / `seed` / `rake`
+(not a per-customer fan-out): one Rails image runs as `web` (Puma — Spree's
+Admin API, its React dashboard and the Store API v3) and `worker` (Sidekiq),
+with `migrate` / `seed` / `rake`
 one-shot Jobs, alongside **one** Next.js app that serves the public storefront,
 the commerce surfaces *and* the colocated Payload CMS admin.
 
@@ -12,7 +13,7 @@ Consumed by `gitops-aypex/brands/tech/{base,stg,prd}` as an OCI chart.
 
 | Alias | Subchart | Role |
 |---|---|---|
-| `web` | `rails-server` | Puma — Spree admin + Store API v3 |
+| `web` | `rails-server` | Puma — Store API v3, Admin API + the React dashboard (`/dashboard`) |
 | `worker` | `rails-server` | Sidekiq (file-freshness liveness probe, no Service) |
 | `migrate` | `rails-task` | `rails db:prepare` (post-install/upgrade hook) |
 | `seed` | `rails-task` | `rails db:seed` (post-**install** only) |
@@ -46,16 +47,16 @@ Application permanently OutOfSync.
 |---|---|
 | `hostnames.site` (may be a list) | `/rails/active_storage` + `/assets` → `web`; everything else → `site` |
 | `hostnames.api` | `web` |
-| `hostnames.admin` | `web` (Spree admin, behind Cloudflare Access) |
+| `hostnames.admin` | `web` (Spree's dashboard + Admin API, behind Cloudflare Access) |
 | `hostnames.cms` | `site`, only `/admin`, `/api`, `/_next` (Payload admin) |
 
 Spree streams product images from S3 through Active Storage proxy URLs, and
 those URLs are on the **storefront** host — so those prefixes must reach `web`
 or every product image 404s.
 
-`hostnames.cms` is separate from `hostnames.admin` because Spree's admin
-already occupies `/admin` on the admin host. Leave it empty to publish no CMS
-route at all.
+`hostnames.cms` is separate from `hostnames.admin` because Payload needs `/admin`
+and `/api`, and on the admin host `/api` is Spree's — the dashboard calls the
+Admin API there, same-origin. Leave it empty to publish no CMS route at all.
 
 Each route binds only the listener its own hostname intersects. A route that
 names a listener it cannot match reports `NoMatchingListenerHostname` while the

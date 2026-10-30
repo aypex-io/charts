@@ -14,9 +14,10 @@ clusterDomain: cluster.local
 ## hostnames.
 ##
 ## cms is the Payload admin, which lives inside the SAME Next.js app as the
-## public site. It gets its own hostname because Spree's admin already occupies
-## /admin on the admin host, and because a hostname is what Cloudflare Access
-## is pointed at. Leave it empty to publish no CMS route at all.
+## public site. It gets its own hostname because the admin host is all Spree's
+## (its dashboard at /dashboard calls the Admin API under /api on the same
+## origin) while Payload needs /admin and /api of its own, and because a
+## hostname is what Cloudflare Access is pointed at. Leave it empty to publish no CMS route at all.
 hostnames:
   site: ""               # tech-stg.aypex.io | aypex.tech
   api: ""                # tech-api-stg.aypex.io | api.aypex.tech
