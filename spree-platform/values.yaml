@@ -321,6 +321,15 @@ externalSecrets:
   storeKind: ClusterSecretStore
   refreshInterval: 1h
 
+  ## Active Record encryption keys (opt-in). When true, the spree-rails Secret
+  ## gets ACTIVE_RECORD_ENCRYPTION_{PRIMARY_KEY,DETERMINISTIC_KEY,
+  ## KEY_DERIVATION_SALT} from the bundle's active_record_encryption_primary_key,
+  ## active_record_encryption_deterministic_key and
+  ## active_record_encryption_key_derivation_salt. Enable only once the bundle
+  ## carries all three. Never rotate them once data has been encrypted.
+  activeRecordEncryption:
+    enabled: false
+
   ## ASM keys.
   asmKeys:
     # ONE consolidated tenant bundle — N27a/<namespace>. ESO extracts it and
