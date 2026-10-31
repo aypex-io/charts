@@ -12,6 +12,10 @@ Gated on .Values.jobs.stagingRefresh.enabled (default false) so it renders ONLY
 in the stg overlay. See charts/spree-platform/values.yaml jobs.stagingRefresh and
 the backend `tkf:staging:sanitize` rake task.
 
+Phases: restore prod dumps into the local Postgres; migrate-spree (db:migrate,
+then spree:upgrade when the image ships it); migrate-payload; sanitize; dump the
+result; load it into stg.
+
 Native sidecars (restartPolicy:Always initContainers) need k8s >= 1.28 — verified
 on N27a before enabling.
 */ -}}
@@ -183,6 +187,21 @@ spec:
                   mkdir -p /tmp/rails && chmod 700 /tmp/rails && export TMPDIR=/tmp/rails
                   echo "[migrate-spree] db:migrate against local PG"
                   bundle exec rails db:migrate
+                  # Spree 6 splits schema migration from data upgrade: `spree:upgrade`
+                  # runs the recorded data-backfill steps (copying customers, etc.) and
+                  # must follow db:migrate. Images without the task (Spree 5.x) skip.
+                  # Anchored so only the top-level task matches, not spree:upgrade:*.
+                  # CONFIRM_NO_PEPPER acknowledges the 5.x password digests carry no
+                  # Devise pepper; without it the upgrade refuses to copy them. It is
+                  # an idempotent no-op once the dump is already upgraded. set -e is
+                  # deliberate: a failed upgrade must fail the refresh, never load
+                  # half-upgraded data into staging.
+                  if bundle exec rake -T spree:upgrade 2>/dev/null | grep -qE '^rake spree:upgrade( |$)'; then
+                    echo "[migrate-spree] spree:upgrade (data upgrade)"
+                    CONFIRM_NO_PEPPER=true bundle exec rake spree:upgrade
+                  else
+                    echo "[migrate-spree] no spree:upgrade task in this image; skipping"
+                  fi
               env: {{- include "spree-store.refreshRailsEnv" (dict "ctx" . "db" "spree") | nindent 16 }}
               envFrom:
                 - secretRef:
