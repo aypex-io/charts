@@ -1,8 +1,9 @@
 {{- /*
 Lets the metrics scraper reach the Dragonfly pods.
 
-WHY THIS IS NEEDED. The Dragonfly CR sets networkPolicyEnabled: true, so the
-operator generates a NetworkPolicy per instance that allows ONLY:
+WHY THIS IS NEEDED. The instance access policy (dragonfly-access-networkpolicy.yaml;
+chart-owned since dragonfly-operator v1.7 stopped generating one per instance)
+allows ONLY:
 
   * port 6379 from `podSelector: {}`  — any pod in the SAME namespace
   * port 9999 from the operator's controller-manager + sibling dragonfly pods
@@ -11,13 +12,12 @@ Alloy runs in another namespace, so it is denied on both ports. That — not the
 Dragonfly config — is why annotating the pods for scraping produced up=0 on
 every target twice over (0.1.7 on :9999, 0.1.8 on :6379). Confirmed from inside
 a same-namespace pod: 6379 CONNECTED, 9999 BLOCKED (ETIMEDOUT), exactly as the
-operator's policy is written.
+access policy is written.
 
 NetworkPolicies are additive — the union of all policies selecting a pod is
-allowed — so this grants one narrow extra ingress and leaves the operator's
-policy untouched. Do NOT "fix" this by setting networkPolicyEnabled: false:
-these instances set no requirepass, so that policy is the only thing stopping
-any pod in the cluster from issuing FLUSHALL.
+allowed — so this grants one narrow extra ingress and leaves the access policy
+untouched. Do NOT "fix" this by widening or disabling dragonfly-access: that
+policy is these instances' access control.
 
 WHY PORT 6379 AND NOT THE ADMIN PORT. A policy change is required either way,
 so the choice is purely about what gets exposed to `obs`. The admin port runs
@@ -42,9 +42,8 @@ metadata:
   labels: {{- include "aypex.labels" . | nindent 4 }}
 spec:
   {{- /*
-  Selects every instance at once (queue, cache) rather than one policy each —
-  the operator already emits a per-instance policy, and this only ever adds the
-  same single rule.
+  Selects every instance at once (queue, cache), like dragonfly-access;
+  this only ever adds the same single rule.
   */}}
   podSelector:
     matchLabels:
