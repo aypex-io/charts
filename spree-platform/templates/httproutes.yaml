@@ -33,6 +33,16 @@ spec:
           namespace: {{ $ns }}
           port: 80
 ---
+{{- /* Store API. `web` also serves the admin and its login, Sidekiq web, the
+       Admin API and Devise's HTML routes, and all of those belong on the admin
+       host. Routing the whole of `web` here published them a second time, on a
+       host the admin's edge policy does not cover. So this route carries ONLY
+       the prefixes a public API host needs: the Store API, the payment and
+       fulfilment webhooks providers call back on, and /up. Anything else here
+       is a gateway 404.
+       The storefront's runtime calls `web` in-cluster, and product image URLs
+       are built on the storefront host (see below); the Store API stays here
+       for clients that use the public host, such as the storefront image build. */}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
@@ -48,7 +58,17 @@ spec:
   hostnames:
     - {{ .Values.hostnames.api | quote }}
   rules:
-    - backendRefs:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v3/store
+        - path:
+            type: PathPrefix
+            value: /api/v3/webhooks
+        - path:
+            type: PathPrefix
+            value: /up
+      backendRefs:
         - name: web
           namespace: {{ $ns }}
           port: 80
