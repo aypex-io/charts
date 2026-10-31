@@ -136,6 +136,18 @@ dragonfly:
     # v1.39.0 after running v1.40.
     tag: v1.40.2
 
+  ## Access NetworkPolicy for every Dragonfly instance in the release
+  ## (templates/dragonfly-access-networkpolicy.yaml): 6379 from any pod in the
+  ## namespace, 9999 (admin) from the operator + sibling dragonfly pods. The
+  ## chart owns this because dragonfly-operator v1.7 stopped creating one per
+  ## instance, so a new or recreated instance would otherwise get none.
+  ## ON by default; only disable while the legacy operator policies still exist.
+  accessNetworkPolicy:
+    enabled: true
+    operatorNamespace: dragonfly-operator-system
+    operatorPodLabels:
+      control-plane: controller-manager
+
   ## Prometheus scrape annotations, applied to every redis-* pod. Alloy's
   ## annotation job (gitops-obs base/helm/alloy) keeps pods with
   ## prometheus.io/scrape="true" and rewrites the target to
