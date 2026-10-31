@@ -1,0 +1,55 @@
+{{- /*
+The access policy for every Dragonfly instance in this release, owned by the
+chart.
+
+WHY THE CHART OWNS THIS. Up to dragonfly-operator v1.6.x the operator created a
+NetworkPolicy per instance (networkPolicyEnabled defaulted true). v1.7.0 removed
+that feature: policies it already created are no longer reconciled, and none is
+created for a new or recreated instance. Without a policy of its own, such an
+instance's ingress would depend on whatever else happens to select its pods
+(for example only dragonfly-metrics-scrape, which admits just the scraper).
+
+This policy restates the operator's former rules, so it is additive to and
+identical in effect with any legacy operator policies still present:
+
+  * 6379 from `podSelector: {}`  — any pod in the SAME namespace (the app)
+  * 9999 (admin) from the operator's controller-manager + sibling dragonfly
+    pods (replication, master election)
+
+It selects every instance at once via `app.kubernetes.io/part-of: dragonfly`,
+which the operator puts on all Dragonfly pods. Default ON.
+*/}}
+{{- $np := .Values.dragonfly.accessNetworkPolicy | default dict }}
+{{- $anyDragonfly := or .Values.redisQueue.enabled .Values.redisCache.enabled (.Values.redisCable | default dict).enabled }}
+{{- if and $anyDragonfly (ne (toString $np.enabled) "false") }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: dragonfly-access
+  namespace: {{ include "spree-store.namespace" . }}
+  labels: {{- include "spree-store.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: dragonfly
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 6379
+          protocol: TCP
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.operatorNamespace | default "dragonfly-operator-system" }}
+          podSelector:
+            matchLabels: {{- toYaml ($np.operatorPodLabels | default (dict "control-plane" "controller-manager")) | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/part-of: dragonfly
+      ports:
+        - port: 9999
+          protocol: TCP
+{{- end }}
