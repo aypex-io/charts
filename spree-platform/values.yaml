@@ -330,6 +330,16 @@ externalSecrets:
   activeRecordEncryption:
     enabled: false
 
+  ## PayPal sandbox app for a staging env (opt-in). When true, a
+  ## `<slug>-paypal-sandbox` Secret gets PAYPAL_SANDBOX_CLIENT_ID,
+  ## PAYPAL_SANDBOX_CLIENT_SECRET and PAYPAL_SANDBOX_WEBHOOK_ID from the bundle's
+  ## paypal_sandbox_client_id, paypal_sandbox_client_secret and
+  ## paypal_sandbox_webhook_id, and the staging refresh's sanitize step reads it:
+  ## the backend's sanitize task then puts the restored PayPal method on the
+  ## sandbox. Enable only in a staging overlay whose bundle carries the keys.
+  paypalSandbox:
+    enabled: false
+
   ## ASM keys.
   asmKeys:
     # ONE consolidated tenant bundle — N27a/<namespace>. ESO extracts it and
