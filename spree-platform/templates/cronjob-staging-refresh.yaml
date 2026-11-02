@@ -244,6 +244,13 @@ spec:
               envFrom:
                 - secretRef:
                     name: {{ $railsSecret }}
+                {{- if .Values.externalSecrets.paypalSandbox.enabled }}
+                {{- /* PAYPAL_SANDBOX_*: sanitize puts PayPal on the sandbox. Optional, */}}
+                {{- /* so a refresh still runs (PayPal off) before the Secret exists.   */}}
+                - secretRef:
+                    name: {{ include "spree-store.resourceName" (dict "ctx" . "suffix" "paypal-sandbox") }}
+                    optional: true
+                {{- end }}
               volumeMounts:
                 - { name: tmp, mountPath: /tmp }
 
