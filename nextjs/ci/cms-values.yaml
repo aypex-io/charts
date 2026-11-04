@@ -19,3 +19,7 @@ extraEnvVars:
 pdb:
   create: true
   minAvailable: 1
+dnsConfig:
+  options:
+    - name: ndots
+      value: "2"
