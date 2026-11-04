@@ -48,6 +48,12 @@ priorityClassName: ""
 schedulerName: ""
 terminationGracePeriodSeconds: 30
 hostAliases: []
+# Pod DNS settings, rendered as the pod's dnsPolicy and dnsConfig. Empty
+# keeps the cluster default (ClusterFirst, ndots:5). Lowering ndots, e.g.
+#   dnsConfig: { options: [{ name: ndots, value: "2" }] }
+# sends external names (S3, third-party APIs) straight to the real name
+# instead of first trying every search domain, while names without a dot
+# (a Service such as `db-rw`) still resolve through the namespace's search domain.
 dnsPolicy: ""
 dnsConfig: {}
 
