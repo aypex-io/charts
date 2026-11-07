@@ -41,9 +41,7 @@ cnpg:
 
 externalSecrets:
   asmKeys:
-    spreeRails: N27a/spree/ci
-    spreeSmtp: N27a/smtp/ci
-    cmsPayload: N27a/cms/ci
+    bundle: N27a/ci
     spreeS3: service_user/prod/ci-spree-stg
     cmsS3: service_user/prod/ci-payload-stg
     cnpgBackup: service_user/prod/cnpg
