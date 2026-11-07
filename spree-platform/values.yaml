@@ -344,7 +344,7 @@ externalSecrets:
   asmKeys:
     # ONE consolidated tenant bundle — N27a/<namespace>. ESO extracts it and
     # splits it into every app Secret (spree-rails, spree-db, cms-payload,
-    # cms-db, spree-smtp, revalidate, resend, webhook). Env-neutral: one AWS
+    # cms-db, revalidate, resend, webhook). Env-neutral: one AWS
     # account per env post the Staging-account split, so the bundle carries flat
     # unsuffixed keys. Set in the gitops base overlay. See
     # infra/ASM-CONSOLIDATION-PLAN.md.
