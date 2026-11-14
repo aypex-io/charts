@@ -340,6 +340,14 @@ externalSecrets:
   paypalSandbox:
     enabled: false
 
+  ## Revue (reviews) webhook signing secret (opt-in). When true, a
+  ## `<slug>-revue-webhook` Secret gets REVUE_WEBHOOK_SECRET from the bundle's
+  ## revue_webhook_secret. The tenant's webhook seed reads it, with
+  ## REVUE_WEBHOOK_URL, to register the Revue endpoint. Enable only in an
+  ## overlay whose bundle carries the key.
+  revueWebhook:
+    enabled: false
+
   ## ASM keys.
   asmKeys:
     # ONE consolidated tenant bundle — N27a/<namespace>. ESO extracts it and
