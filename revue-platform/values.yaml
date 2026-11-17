@@ -16,6 +16,7 @@ hostnames:
   api: ""                # api.revue.fyi
   public: ""             # wildcard for per-store public sites, e.g. "*.revue.fyi".
                          # PRD only (stg can't co-own *.revue.fyi). Empty = no route.
+  marketing: ""          # marketing site host, e.g. "revue.fyi". Empty = no route.
 
 gateway:
   name: main
@@ -25,6 +26,7 @@ gateway:
     admin: []            # per-route listener (falls back to .reviews)
     api: []              # per-route listener (falls back to .reviews)
     public: []           # per-route listener (falls back to .reviews)
+    marketing: []        # per-route listener (falls back to .reviews)
 
 ## @section CNPG cluster
 ## Single database `revue`, owner role `revue` (DDL / migrations), plus a

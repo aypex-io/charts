@@ -5,6 +5,7 @@ name: revue
 hostnames:
   admin: admin.stg.revue.aypex.io
   api: api.stg.revue.aypex.io
+  marketing: marketing.example.test
 
 gateway:
   name: main
