@@ -20,6 +20,9 @@ spec:
         - name: {{ $release }}-web
           namespace: {{ $ns }}
           port: 80
+{{- /* A preview serves admin and API on one host: a second route for the same
+host would be redundant, and Gateway API would pick between them by age. */}}
+{{- if ne .Values.hostnames.api .Values.hostnames.admin }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -40,6 +43,7 @@ spec:
         - name: {{ $release }}-web
           namespace: {{ $ns }}
           port: 80
+{{- end }}
 {{- if .Values.hostnames.public }}
 ---
 # Per-store public reviews sites (<store-handle>.revue.fyi). Wildcard host; Gateway
