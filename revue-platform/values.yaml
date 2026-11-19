@@ -242,3 +242,18 @@ seed:
   hookDeletePolicy: before-hook-creation
   backoffLimit: 1
   resourcesPreset: none
+
+# Sample data for a per-PR preview environment: the idempotent, deterministic
+# revue:demo task (orgs, teams, stores, reviews, photos). The last PostSync hook —
+# after migrate (-5) and seed (0). Under ArgoCD every hook runs on EVERY sync;
+# revue:demo finds what it made last time and adds nothing. OFF unless an overlay
+# sets sample.enabled (the gitops preview overlay does; prd never does).
+sample:
+  <<: *railsSecurity
+  enabled: false
+  command: [bundle, exec, rails, "revue:demo"]
+  hook: post-install,post-upgrade
+  hookWeight: "5"
+  hookDeletePolicy: before-hook-creation
+  backoffLimit: 1
+  resourcesPreset: none

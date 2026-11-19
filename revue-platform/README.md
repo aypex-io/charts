@@ -8,7 +8,9 @@ integration API + Hotwire admin) and `worker` (the pgbus supervisor), with
 pgbus runs **both background jobs and realtime Turbo streams on Postgres/PGMQ**,
 so there is no Sidekiq and no job/cable Redis — only a cache Dragonfly remains.
 
-Consumed by `gitops-aypex/products/revue/{base,stg,prd}` as an OCI chart.
+Consumed by `gitops-aypex/products/revue/{base,stg,prd}` as an OCI chart, and by
+the `revue-preview` ApplicationSet (`products/revue/preview`): one release per PR
+labelled `preview`, all in the shared `revue-preview` namespace.
 
 ## Composition
 
@@ -18,10 +20,12 @@ Consumed by `gitops-aypex/products/revue/{base,stg,prd}` as an OCI chart.
 | `worker` | `rails-server` | pgbus supervisor (jobs + streams; no external probe — self-supervising) |
 | `migrate` | `rails-task` | `db:prepare && db:install_pgmq && db:enforce_tenancy` (post-install/upgrade hook, **owner** role) |
 | `seed` | `rails-task` | `rails db:seed` (plans) |
+| `sample` | `rails-task` | `rails revue:demo` (sample data; idempotent). **Previews only**: off unless `sample.enabled`. Hook weight 5, after migrate (-5) and seed (0) |
 
 In-umbrella infra: CNPG `revue-db` (database `revue`), `redis-cache` (LRU,
 Rails.cache + rack-attack), ExternalSecrets (the `N27a/revue` bundle), and
-HTTPRoutes for the `admin` + `api` hosts onto the shared `main` gateway. Jobs and
+HTTPRoutes for the `admin` + `api` hosts onto the shared `main` gateway (one route
+when `hostnames.api == hostnames.admin`, as on a preview). Jobs and
 streams need no Redis — they ride the CNPG primary via PGMQ + LISTEN/NOTIFY.
 
 ## RLS / the two DB roles
@@ -44,7 +48,13 @@ GUC at session level, which a transaction-pooling PgBouncer would not preserve.
 helm dependency update
 helm lint . -f ci/ci-values.yaml
 helm template revue-stg . -f ci/ci-values.yaml
+bash ci/check-preview-releases.sh   # two preview releases share a namespace without collisions
 ```
+
+**Previews share one namespace**, so everything the chart renders must be
+release-scoped. Subchart objects, routes and the ReferenceGrant are named from the
+release. Per PR, the ApplicationSet sets `cnpg.name` and each workload's
+`database.host`. `ci/check-preview-releases.sh` fails on any shared name.
 
 ## Release
 

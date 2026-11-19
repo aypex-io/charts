@@ -31,3 +31,8 @@ jobs:
             done
             cd ..
           done
+      - name: Preview releases don't collide (revue-platform)
+        # Every Revue preview is its own release in the shared revue-preview
+        # namespace. Renders two and fails on any shared object name. Uses the
+        # deps fetched above; yq is preinstalled on ubuntu runners.
+        run: bash revue-platform/ci/check-preview-releases.sh

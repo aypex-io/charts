@@ -1,0 +1,72 @@
+# A per-PR preview release, as gitops-aypex products/revue/{base,preview}/values.yaml
+# plus the revue-preview ApplicationSet render it: every preview shares the
+# terraform-owned revue-preview namespace, so everything must be release-scoped.
+# ci/check-preview-releases.sh renders two of these and asserts nothing collides.
+# The per-PR values (hostnames, cnpg.name, database hosts) come from that script.
+env: preview
+name: revue
+
+hostnames:
+  admin: preview-0.revue.fyi
+  api: preview-0.revue.fyi
+  public: preview-0-reviews.revue.fyi
+  marketing: preview-0-www.revue.fyi
+
+gateway:
+  sectionNames:
+    reviews: [wildcard-revue-fyi-https]
+
+cnpg:
+  name: revue-pr-0-db
+  instances: 1
+  storageSize: 2Gi
+  walStorageSize: 1Gi
+
+# Shared secrets come from the revue-preview-shared App, not from each release.
+externalSecrets:
+  asmKeys:
+    bundle: ""
+    s3: ""
+
+global:
+  s3:
+    mediaBucket: revue-media-eu-west-2-411653576501
+
+images:
+  backend: pr-0-0000000000000000000000000000000000000000
+
+_image: &image
+  registry: 517036156200.dkr.ecr.us-east-1.amazonaws.com
+  repository: revue-backend-preview
+  tag: pr-0-0000000000000000000000000000000000000000
+
+_appDb: &appDb
+  enabled: true
+  host: revue-pr-0-db-rw
+  port: 5432
+  name: revue
+  userSecretRef: revue-app-db
+
+_ownerDb: &ownerDb
+  enabled: true
+  host: revue-pr-0-db-rw
+  port: 5432
+  name: revue
+  userSecretRef: revue-db
+
+web:
+  image: *image
+  database: *appDb
+worker:
+  image: *image
+  database: *appDb
+migrate:
+  image: *image
+  database: *ownerDb
+seed:
+  image: *image
+  database: *ownerDb
+sample:
+  enabled: true
+  image: *image
+  database: *ownerDb
