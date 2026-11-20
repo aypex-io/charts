@@ -3,12 +3,13 @@
 Umbrella chart for **Revue**, the headless reviews platform. A single product
 (not a per-customer fan-out): one Rails image runs as `web` (Puma — JSON widget/
 integration API + Hotwire admin) and `worker` (the pgbus supervisor), with
-`migrate` + `seed` one-shot Jobs, on a single CNPG cluster + one cache Dragonfly.
+`migrate` + `seed` one-shot Jobs, on a single CNPG cluster. Previews add a `sample` Job.
 
 pgbus runs **both background jobs and realtime Turbo streams on Postgres/PGMQ**,
-so there is no Sidekiq and no job/cable Redis — only a cache Dragonfly remains.
+and Rails.cache is Solid Cache, also on Postgres: no Sidekiq and no Redis of any kind.
 
-Consumed by `gitops-aypex/products/revue/{base,stg,prd}` as an OCI chart, and by
+Consumed by `gitops-aypex/products/revue/{base,prd}` as an OCI chart (prd, which Kargo
+auto-promotes; Revue has no staging since 2026-11), and by
 the `revue-preview` ApplicationSet (`products/revue/preview`): one release per PR
 labelled `preview`, all in the shared `revue-preview` namespace.
 
@@ -47,7 +48,7 @@ GUC at session level, which a transaction-pooling PgBouncer would not preserve.
 ```bash
 helm dependency update
 helm lint . -f ci/ci-values.yaml
-helm template revue-stg . -f ci/ci-values.yaml
+helm template revue-ci . -f ci/ci-values.yaml
 bash ci/check-preview-releases.sh   # two preview releases share a namespace without collisions
 ```
 
