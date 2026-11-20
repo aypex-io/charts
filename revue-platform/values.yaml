@@ -1,8 +1,8 @@
 ## revue-platform umbrella — product-neutral defaults.
-## Env overlays live in gitops-aypex products/revue/{base,stg,prd}/values.yaml.
+## Env overlays live in gitops-aypex products/revue/{base,prd,preview}/values.yaml.
 
 ## @section Top-level
-env: ""                  # "stg" | "prd" — env overlay
+env: ""                  # "prd" | "preview" — env overlay
 namespace: ""            # auto: "revue-{env}" — see _helpers.tpl
 name: revue              # resource-name prefix (this is a single product)
 clusterDomain: cluster.local
@@ -15,7 +15,7 @@ hostnames:
   admin: ""              # admin.revue.fyi
   api: ""                # api.revue.fyi
   public: ""             # wildcard for per-store public sites, e.g. "*.revue.fyi".
-                         # PRD only (stg can't co-own *.revue.fyi). Empty = no route.
+                         # PRD only (a preview can't co-own *.revue.fyi). Empty = no route.
   marketing: ""          # marketing site host, e.g. "revue.fyi". Empty = no route.
 
 gateway:
@@ -148,7 +148,7 @@ web:
   # gitops overlay sets its own web.extraEnvVars list, and Helm REPLACES lists
   # across value layers (it only deep-merges maps) — so extraEnvVars here would be
   # dropped. configmap.data merges, and it's where the overlay appends per-env
-  # OTEL_RESOURCE_ATTRIBUTES (deployment.environment=stg|prd) too.
+  # OTEL_RESOURCE_ATTRIBUTES (deployment.environment=prd|preview) too.
   configmap:
     create: true
     data:
