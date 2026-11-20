@@ -8,10 +8,13 @@ integration API + Hotwire admin) and `worker` (the pgbus supervisor), with
 pgbus runs **both background jobs and realtime Turbo streams on Postgres/PGMQ**,
 and Rails.cache is Solid Cache, also on Postgres: no Sidekiq and no Redis of any kind.
 
-Consumed by `gitops-aypex/products/revue/{base,prd}` as an OCI chart (prd, which Kargo
-auto-promotes; Revue has no staging since 2026-11), and by
-the `revue-preview` ApplicationSet (`products/revue/preview`): one release per PR
-labelled `preview`, all in the shared `revue-preview` namespace.
+Consumed by `gitops-aypex/products/revue/{base,prd}` as an OCI chart, and by the
+`revue-preview` ApplicationSet (`products/revue/preview`): one release per PR labelled
+`preview`, all in the shared `revue-preview` namespace. Revue has no staging (since
+2026-11), so **a release of this chart runs on previews first**. Kargo's `preview`
+Stage points every preview at it (`products/revue/preview/version.yaml`), and prd
+takes it automatically once a preview has run it Synced/Healthy for an hour. With no
+preview open it waits, so label a revue PR `preview` to move it along.
 
 ## Composition
 
