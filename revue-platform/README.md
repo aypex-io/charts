@@ -38,7 +38,9 @@ Multi-tenant isolation is enforced in the app (`acts_as_tenant`) and backstopped
 by Postgres RLS. RLS is bypassed for a table's **owner**, so:
 
 - `migrate`/`seed` connect as the **owner** role `revue` (secret `revue-db`) — they
-  run DDL and bypass RLS.
+  run DDL and bypass RLS. The owner is also a CNPG managed role, only to make it a
+  member of `revue_app`: the worker creates the pgbus queue tables as `revue_app`,
+  and a PGMQ upgrade migration run as the owner has to alter them.
 - `web`/`worker` connect as the **non-owner** runtime role `revue_app` (secret
   `revue-app-db`, a CNPG managed role) — RLS engages, and a query that forgot its
   tenant scope cannot cross tenants.
