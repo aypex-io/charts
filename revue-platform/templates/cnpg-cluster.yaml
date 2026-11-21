@@ -54,6 +54,22 @@ spec:
       login: true
       passwordSecret:
         name: {{ .Values.cnpg.appRolePasswordSecret }}
+    # The owner, managed only to make it a MEMBER of the runtime role. The worker
+    # creates the pgbus queue tables as the runtime role, so it owns them, and a
+    # PGMQ upgrade migration (run as the owner) must re-create their NOTIFY
+    # triggers, which it can only do with the runtime role's privileges. The runtime
+    # role gains nothing: membership runs owner -> runtime only, so RLS still
+    # binds the runtime role.
+    # Listing a role here ADOPTS it: CNPG forces every attribute to this entry
+    # and resets omitted ones to its defaults, and login defaults to FALSE. So
+    # login stays explicit, and the rest match bootstrap's `CREATE ROLE <owner>
+    # LOGIN`. No passwordSecret (and no disablePassword): the password is left as
+    # bootstrap set it.
+    - name: {{ .Values.cnpg.owner }}
+      ensure: present
+      login: true
+      inRoles:
+      - {{ .Values.cnpg.appRole }}
 
   storage:
     size: {{ .Values.cnpg.storageSize }}
