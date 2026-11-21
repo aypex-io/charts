@@ -13,7 +13,7 @@ Consumed by `gitops-aypex/products/revue/{base,prd}` as an OCI chart, and by the
 `preview`, all in the shared `revue-preview` namespace. Revue has no staging (since
 2026-11), so **a release of this chart runs on previews first**. Kargo's `preview`
 Stage points every preview at it (`products/revue/preview/version.yaml`), and prd
-takes it automatically once a preview has run it Synced/Healthy for an hour. With no
+takes it automatically once a preview has run it Synced/Healthy for 10 minutes. With no
 preview open it waits, so label a revue PR `preview` to move it along.
 
 ## Composition
