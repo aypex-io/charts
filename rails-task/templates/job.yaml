@@ -1,3 +1,6 @@
+{{- if and .Values.hook .Values.argocd.hook }}
+{{- fail "rails-task: set either hook (Helm) or argocd.hook, not both" }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -16,6 +19,13 @@ metadata:
     {{- if .Values.hookDeletePolicy }}
     "helm.sh/hook-delete-policy": {{ .Values.hookDeletePolicy | quote }}
     {{- end }}
+  {{- end }}
+  {{- if .Values.argocd.hook }}
+    "argocd.argoproj.io/hook": {{ .Values.argocd.hook | quote }}
+    "argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation"
+  {{- end }}
+  {{- if .Values.argocd.syncWave }}
+    "argocd.argoproj.io/sync-wave": {{ .Values.argocd.syncWave | quote }}
   {{- end }}
 spec:
   backoffLimit: {{ .Values.backoffLimit }}

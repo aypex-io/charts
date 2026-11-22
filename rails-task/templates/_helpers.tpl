@@ -60,7 +60,8 @@ Render the standard envFrom block.
 {{- end -}}
 
 {{/*
-Compute the Job name. When a Helm hook is set, suffix with a content hash so
+Compute the Job name. When a Helm hook or an ArgoCD hook (argocd.hook) is set,
+suffix with a content hash so
 each release cycle creates a distinct tracked resource (ArgoCD tracks named
 hooks; a stable name would leave them perpetually "Synced" — see
 feedback_argocd_helm_hooks_no_drift).
@@ -84,7 +85,7 @@ sync. extraEnvVars is static values-file content, so it is safe.
 */}}
 {{- define "rails-task.jobName" -}}
 {{- $base := include "common.names.fullname" . -}}
-{{- if .Values.hook -}}
+{{- if or .Values.hook .Values.argocd.hook -}}
 {{- $hash := (printf "%v-%v-%v" .Values.command .Values.image.tag .Values.extraEnvVars) | sha256sum | trunc 8 -}}
 {{- printf "%s-%s" $base $hash | trunc 63 | trimSuffix "-" -}}
 {{- else -}}

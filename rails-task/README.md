@@ -33,6 +33,21 @@ database:
 extraEnvVarsSecret: myapp-rails
 ```
 
+## Example: migrate before the Deployments roll (ArgoCD)
+
+A Helm hook runs after the sync (PostSync), so new pods would start on the old
+schema. An ArgoCD Sync hook in an earlier sync wave runs first, and ArgoCD rolls
+the later waves only once it completes. If it fails, the sync fails and the
+running pods are left as they are.
+
+```yaml
+command: [bundle, exec, rails, db:migrate]
+argocd:
+  hook: Sync
+  syncWave: "-5"   # the Deployments are in wave 0; the database must be in an earlier wave
+backoffLimit: 3
+```
+
 ## Example: seed as a one-time tracked Job
 
 ```yaml
