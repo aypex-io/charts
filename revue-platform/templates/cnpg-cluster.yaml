@@ -4,6 +4,12 @@ metadata:
   name: {{ .Values.cnpg.name }}
   namespace: {{ include "revue.namespace" . }}
   labels: {{- include "revue.labels" . | nindent 4 }}
+  annotations:
+    # After the ExternalSecrets (-10, the bootstrap and role passwords), before the
+    # migrate Job (-5) and the Deployments (0). ArgoCD waits for the Cluster to be
+    # Healthy (its built-in CNPG health check) before the next wave, so on a fresh
+    # install migrate never starts against a database that isn't there yet.
+    argocd.argoproj.io/sync-wave: "-8"
 spec:
   instances: {{ .Values.cnpg.instances }}
   imageName: {{ .Values.cnpg.imageName }}

@@ -228,9 +228,17 @@ migrate:
   # carry it) → db:enforce_tenancy (RLS, resolver fns, runtime-role + pgmq
   # grants). Shell form so the three run in order, all as the owner role.
   command: [sh, -c, "bundle exec rails db:prepare && bundle exec rails db:install_pgmq && bundle exec rails db:enforce_tenancy"]
-  hook: post-install,post-upgrade
-  hookWeight: "-5"
-  hookDeletePolicy: before-hook-creation
+  # Migrate BEFORE the new pods roll. An ArgoCD Sync hook in wave -5: after the
+  # Cluster (-8), and ArgoCD rolls the Deployments (wave 0) only once it completes.
+  # New code therefore never starts on the old schema. While it runs, the previous
+  # release's pods serve on the new schema, so a migration must still be one the
+  # old code survives (expand, then contract). If it fails, the sync fails and the
+  # running pods are left as they are; each sync retry re-creates the Job.
+  # (It was a Helm post-install/post-upgrade hook = ArgoCD PostSync, which ran
+  # after the new pods were already up.)
+  argocd:
+    hook: Sync
+    syncWave: "-5"
   backoffLimit: 3
   resourcesPreset: none
 
@@ -244,8 +252,9 @@ seed:
   resourcesPreset: none
 
 # Sample data for a per-PR preview environment: the idempotent, deterministic
-# revue:demo task (orgs, teams, stores, reviews, photos). The last PostSync hook —
-# after migrate (-5) and seed (0). Under ArgoCD every hook runs on EVERY sync;
+# revue:demo task (orgs, teams, stores, reviews, photos). A PostSync hook after
+# seed (0); migrate has already run, in the sync itself. Under ArgoCD every hook
+# runs on EVERY sync;
 # revue:demo finds what it made last time and adds nothing. OFF unless an overlay
 # sets sample.enabled (the gitops preview overlay does; prd never does).
 sample:

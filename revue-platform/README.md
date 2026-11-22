@@ -22,9 +22,9 @@ preview open it waits, so label a revue PR `preview` to move it along.
 |---|---|---|
 | `web` | `rails-server` | Puma — `/v1/widget`, `/v1/integrations`, `/admin` |
 | `worker` | `rails-server` | pgbus supervisor (jobs + streams; no external probe — self-supervising) |
-| `migrate` | `rails-task` | `db:prepare && db:install_pgmq && db:enforce_tenancy` (post-install/upgrade hook, **owner** role) |
+| `migrate` | `rails-task` | `db:prepare && db:install_pgmq && db:enforce_tenancy` (ArgoCD Sync hook in wave -5: after the CNPG Cluster (-8), **before** the Deployments (0); **owner** role) |
 | `seed` | `rails-task` | `rails db:seed` (plans) |
-| `sample` | `rails-task` | `rails revue:demo` (sample data; idempotent). **Previews only**: off unless `sample.enabled`. Hook weight 5, after migrate (-5) and seed (0) |
+| `sample` | `rails-task` | `rails revue:demo` (sample data; idempotent). **Previews only**: off unless `sample.enabled`. PostSync hook weight 5, after seed (0) |
 
 In-umbrella infra: CNPG `revue-db` (database `revue`), `redis-cache` (LRU,
 Rails.cache + rack-attack), ExternalSecrets (the `N27a/revue` bundle), and
