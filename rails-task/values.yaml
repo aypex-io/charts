@@ -64,6 +64,21 @@ hook: ""                           # e.g. "post-install,post-upgrade"
 hookWeight: ""                     # e.g. "0"
 hookDeletePolicy: ""               # e.g. "before-hook-creation"
 
+## ArgoCD's own hook, for a Job that must run DURING the sync, ahead of the
+## resources in later sync waves (say, a migration that must finish before the
+## Deployments that need it roll). A Helm hook can't do that: ArgoCD maps
+## helm.sh/hook to PreSync or PostSync only.
+## - argocd.hook (e.g. "Sync") makes the Job that ArgoCD hook, deleted and
+##   re-created on every sync (BeforeHookCreation), with its name hashed as for
+##   `hook`.
+## - argocd.syncWave (e.g. "-5") puts the Job in that wave, so ArgoCD waits for
+##   it to complete before the next wave. The ServiceAccount goes one wave
+##   earlier, so it exists when the Job's pod starts.
+## Set either `hook` or `argocd.hook`, not both.
+argocd:
+  hook: ""                         # e.g. "Sync"
+  syncWave: ""                     # e.g. "-5"
+
 ## @section Pod template
 ##
 priorityClassName: ""
