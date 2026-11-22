@@ -51,8 +51,9 @@ for n in 1 2; do
   [ "$routes" = 1 ] || fail "revue-pr-${n}: preview-${n}.revue.fyi is routed ${routes} times, want 1"
 done
 
-# (e) A preview waiting for its image (every workload switched off) still renders
-# its database and routes, and no Deployment, Job or anything else that pulls it.
+# (e) A preview waiting for its image (every workload switched off) renders its
+# database and nothing else: no Deployment, Job or anything that pulls the image,
+# and no routes or ReferenceGrant pointing at a web Service that isn't there.
 off="${out}/pr-off.yaml"
 helm template revue-pr-3 . -f ci/preview-values.yaml \
   --set web.enabled=false --set worker.enabled=false --set migrate.enabled=false \
@@ -61,7 +62,7 @@ pulls=$(yq ea '[select(.spec.template.spec.containers or .spec.jobTemplate)] | l
 [ "$pulls" = 0 ] || fail "switched-off preview still renders ${pulls} pod-running objects"
 clusters=$(yq ea '[select(.kind == "Cluster")] | length' "$off")
 [ "$clusters" = 1 ] || fail "switched-off preview renders ${clusters} CNPG Clusters, want 1"
-routes=$(yq ea '[select(.kind == "HTTPRoute")] | length' "$off")
-[ "$routes" -ge 1 ] || fail "switched-off preview renders no HTTPRoute"
+routes=$(yq ea '[select(.kind == "HTTPRoute" or .kind == "ReferenceGrant")] | length' "$off")
+[ "$routes" = 0 ] || fail "switched-off preview renders ${routes} routes/ReferenceGrants, want 0"
 
 echo "OK: two preview releases render without collisions; a switched-off one runs nothing"

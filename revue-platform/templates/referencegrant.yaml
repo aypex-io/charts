@@ -1,3 +1,5 @@
+{{- /* Lets the routes (gateway namespace) reach the web Service; off with them. */ -}}
+{{- if .Values.web.enabled }}
 apiVersion: gateway.networking.k8s.io/v1beta1
 kind: ReferenceGrant
 metadata:
@@ -12,3 +14,4 @@ spec:
   to:
     - group: ""
       kind: Service
+{{- end }}
