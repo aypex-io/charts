@@ -123,8 +123,15 @@ _railsSecurity: &railsSecurity
     seccompProfile:
       type: RuntimeDefault
 
+## Workload switches. web, worker, migrate and seed are on unless an overlay turns
+## them off (prd never does). A preview starts with all of them off, so only its
+## CNPG Cluster, Services and routes exist, then turns them on together, with the
+## image tag, once that image has been built (Kargo writes the per-PR values). So
+## nothing starts before the image exists. Turning one off on a live release
+## deletes it.
 web:
   <<: *railsSecurity
+  enabled: true
   command: [bundle, exec, rails, server, "-b", "0.0.0.0", "-p", "3000"]
   service:
     enabled: true
@@ -168,6 +175,7 @@ web:
 
 worker:
   <<: *railsSecurity
+  enabled: true   # see the workload switches note above web
   # pgbus supervisor — workers + dispatcher + recurring scheduler, all on
   # Postgres/PGMQ (no Sidekiq, no Redis). MUST be the bin/pgbus BINSTUB, not
   # `bundle exec pgbus`: the gem's exe/pgbus boots only `require "pgbus"` (no
@@ -224,6 +232,7 @@ worker:
 
 migrate:
   <<: *railsSecurity
+  enabled: true   # see the workload switches note above web
   # db:prepare (schema) → db:install_pgmq (vendored PGMQ schema; schema.rb can't
   # carry it) → db:enforce_tenancy (RLS, resolver fns, runtime-role + pgmq
   # grants). Shell form so the three run in order, all as the owner role.
@@ -244,6 +253,7 @@ migrate:
 
 seed:
   <<: *railsSecurity
+  enabled: true   # see the workload switches note above web
   command: [bundle, exec, rails, db:seed]
   hook: post-install,post-upgrade
   hookWeight: "0"

@@ -51,4 +51,17 @@ for n in 1 2; do
   [ "$routes" = 1 ] || fail "revue-pr-${n}: preview-${n}.revue.fyi is routed ${routes} times, want 1"
 done
 
-echo "OK: two preview releases render without collisions"
+# (e) A preview waiting for its image (every workload switched off) still renders
+# its database and routes, and no Deployment, Job or anything else that pulls it.
+off="${out}/pr-off.yaml"
+helm template revue-pr-3 . -f ci/preview-values.yaml \
+  --set web.enabled=false --set worker.enabled=false --set migrate.enabled=false \
+  --set seed.enabled=false --set sample.enabled=false > "$off"
+pulls=$(yq ea '[select(.spec.template.spec.containers or .spec.jobTemplate)] | length' "$off")
+[ "$pulls" = 0 ] || fail "switched-off preview still renders ${pulls} pod-running objects"
+clusters=$(yq ea '[select(.kind == "Cluster")] | length' "$off")
+[ "$clusters" = 1 ] || fail "switched-off preview renders ${clusters} CNPG Clusters, want 1"
+routes=$(yq ea '[select(.kind == "HTTPRoute")] | length' "$off")
+[ "$routes" -ge 1 ] || fail "switched-off preview renders no HTTPRoute"
+
+echo "OK: two preview releases render without collisions; a switched-off one runs nothing"
