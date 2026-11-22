@@ -10,11 +10,14 @@ and Rails.cache is Solid Cache, also on Postgres: no Sidekiq and no Redis of any
 
 Consumed by `gitops-aypex/products/revue/{base,prd}` as an OCI chart, and by the
 `revue-preview` ApplicationSet (`products/revue/preview`): one release per PR labelled
-`preview`, all in the shared `revue-preview` namespace. Revue has no staging (since
-2026-11), so **a release of this chart runs on previews first**. Kargo's `preview`
-Stage points every preview at it (`products/revue/preview/version.yaml`), and prd
-takes it automatically once a preview has run it Synced/Healthy for 10 minutes. With no
-preview open it waits, so label a revue PR `preview` to move it along.
+`preview`, all in the shared `revue-preview` namespace, at prd's chart version.
+
+Revue has no staging (since 2026-11), so **a change to this chart is previewed on its
+own PR**: label the charts PR `preview` and the deployment repo runs this chart from
+that PR's branch, with the backend image production runs, at
+`preview-chart-<N>.revue.fyi` (a fresh install, so it doesn't test an upgrade of an
+existing release). Then merge it and tag `revue-platform-vX.Y.Z`: production takes the
+release straight away, with no soak.
 
 ## Composition
 
