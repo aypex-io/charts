@@ -125,7 +125,8 @@ _railsSecurity: &railsSecurity
 
 ## Workload switches. web, worker, migrate and seed are on unless an overlay turns
 ## them off (prd never does). A preview starts with all of them off, so only its
-## CNPG Cluster, Services and routes exist, then turns them on together, with the
+## CNPG Cluster exists (the routes and their ReferenceGrant follow web.enabled),
+## then turns them on together, with the
 ## image tag, once that image has been built (Kargo writes the per-PR values). So
 ## nothing starts before the image exists. Turning one off on a live release
 ## deletes it.

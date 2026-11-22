@@ -29,7 +29,9 @@ preview open it waits, so label a revue PR `preview` to move it along.
 **Workload switches (0.8.0+):** `web.enabled`, `worker.enabled`, `migrate.enabled`
 and `seed.enabled` (and `sample.enabled`) turn each workload on or off. All but
 `sample` default to on, and prd sets none of them. A preview starts with all five
-off, so only its CNPG Cluster, Services and routes exist. Once the PR's image has
+off, so only its CNPG Cluster exists: the routes and their ReferenceGrant follow
+`web.enabled` (0.8.2+), so a waiting preview stays Healthy and its hosts 404
+instead of pointing the gateway at a web Service that isn't there. Once the PR's image has
 been built, Kargo writes a per-PR values file that turns them on together with
 the image tag. The first sync then migrates (Sync hook, wave -5) and starts the
 Deployments with an image that already exists: no ImagePullBackOff, no crash

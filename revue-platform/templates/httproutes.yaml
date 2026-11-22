@@ -1,5 +1,9 @@
 {{- $ns := include "revue.namespace" . -}}
 {{- $release := .Release.Name -}}
+{{- /* Only once web is on: a preview waiting for its image (every workload
+     switched off) gets no routes, so it doesn't point the gateway at a web
+     Service that doesn't exist (BackendNotFound, App Degraded). */ -}}
+{{- if .Values.web.enabled }}
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -95,4 +99,5 @@ spec:
         - name: {{ $release }}-web
           namespace: {{ $ns }}
           port: 80
+{{- end }}
 {{- end }}
